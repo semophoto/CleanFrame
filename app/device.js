@@ -2,20 +2,16 @@
 (function () {
   'use strict';
   var IDS = {
-    stremio: 'IkWsFHtOY9.Stremio', netflix: 'org.tizen.netflix-app',
-    disneyplus: 'MCmYXNxgcu.DisneyPlus', youtube: '9Ur5IzDKqV.TizenYouTube',
-    appletv: 'com.samsung.tv.aria-video', primevideo: 'org.tizen.primevideo',
-    abciview: 'mWK87Xghap.ABCiview', sbs: 'OyE7OuxlUi.SBSOnDemand',
-    applemusic: 'org.tizen.apple.apple-music'
+    nuvio: 'NuvioTV001.NuvioTV', tizentube: 'xvvl3S1TT1.TizenTubeStandalone'
   };
-  var STREAMING = ['as6cYRgkPy.Binge', '73iTZRTc34.Stan', '5b8c3eb16b.BeamCTVDev',
+  var STREAMING = ['MoonLightS.MoonlightWasm', 'HEPsqFNie0.tvplusstandalone', 'xvvl3S1bvH.TizenBrewStandalone', 'as6cYRgkPy.Binge', '73iTZRTc34.Stan', '5b8c3eb16b.BeamCTVDev',
     'KaLitts8bq.tenplaySamsungTizen', 'eYuOiOLYQX.KayoSports', 'Ne2ZsPWdKl.9NOW',
     '3KA0pm7a7V.TubiTV', 'rJeHak5zRg.Spotify', 'icp4AvUPiA.7plus'];
   var CONSUMER_SYSTEM = ['org.tizen.browser', 'com.microsoft.copilot'];
   var EXTRA_BRANDS = {'rJeHak5zRg.Spotify': 'spotify', '5b8c3eb16b.BeamCTVDev': 'hbomax', '3KA0pm7a7V.TubiTV': 'tubi'};
-  var INTERNAL = ['adplatform.ADPlayer', 'WykOS4t4F0.cmsWebApp', '25emanual3.emanual',
+  var INTERNAL = ['2025ePop01.SmartTV', 'adplatform.ADPlayer', 'WykOS4t4F0.cmsWebApp', '25emanual3.emanual',
     'ZODRT12q2l.WebAccountExtension', 'ByJlgt0XeD.CastSettingsApp', 'tv6pbVMQFF.PrivacyChoices'];
-  var SELF = 'nClrkHome1.FrameHome';
+  var SELF = '2WypXqAbpb.CleanFrame';
   function api() { return window.tizen && window.tizen.application; }
   function unavailable(done) {
     done({ message: 'Open CleanFrame on the TV to use this control.', detail: 'The web preview cannot control the TV.' });
@@ -70,5 +66,58 @@
       }, function (err) { finish(failure(err)); });
     } catch (err) { finish(failure(err)); }
   }
-  window.FrameDevice = { launch: launch, launchApp: launchApp, art: art, home: home, settings: settings, apps: apps };
+  /* HDMI inputs: list ports with systeminfo, then show one full screen in this app's TV window. */
+  function videoSources(done) {
+    if (!window.tizen || !tizen.systeminfo) { unavailable(done); return; }
+    var finish = bounded(done);
+    try {
+      tizen.systeminfo.getPropertyValue('VIDEOSOURCE', function (info) {
+        var list = [];
+        [['connected', true], ['disconnected', false]].forEach(function (group) {
+          (info && info[group[0]] || []).forEach(function (s) {
+            // Samsung documents only type and number; use a device name too if this firmware adds one.
+            var label = s && [s.name, s.label, s.deviceName, s.connectedDeviceName].filter(function (v) { return typeof v === 'string' && v.trim(); })[0];
+            if (s && s.type === 'HDMI' && s.number > 0) list.push({ port: s.number, connected: group[1], source: s, label: label ? label.trim().slice(0, 40) : '' });
+          });
+        });
+        list.sort(function (a, b) { return a.port - b.port; });
+        finish(null, list);
+      }, function (err) { finish(failure(err)); });
+    } catch (err) { finish(failure(err)); }
+  }
+  function showSource(port, done) {
+    if (!window.tizen || !tizen.tvwindow) { unavailable(done); return; }
+    videoSources(function (err, list) {
+      var hit = !err && list.filter(function (s) { return s.port === port; })[0], finish = bounded(done);
+      if (!hit) { finish(err || { message: 'HDMI ' + port + ' is not available on this TV.' }); return; }
+      try {
+        tizen.tvwindow.setSource(hit.source, function () {
+          tizen.tvwindow.show(function () { finish(null); }, function (e) { finish(failure(e)); }, ['0px', '0px', '1920px', '1080px'], 'MAIN');
+        }, function (e) { finish(failure(e)); }, 'MAIN');
+      } catch (e) { finish(failure(e)); }
+    });
+  }
+  function hideSource() {
+    try { if (window.tizen && tizen.tvwindow) tizen.tvwindow.hide(function () {}, function () {}, 'MAIN'); } catch (e) { /* already hidden */ }
+  }
+  /* A remote button can launch CleanFrame with data 'source=hdmi2' to open that input directly.
+     Also accepts ?source=hdmi2 in the browser preview. Returns 'hdmi1'..'hdmi4' or null. */
+  function requestedSource() {
+    try {
+      var m = /[?&]source=(hdmi[1-4])/i.exec(window.location.search || '');
+      if (m) return m[1].toLowerCase();
+      if (window.tizen && window.tizen.application) {
+        var req = tizen.application.getCurrentApplication().getRequestedAppControl();
+        var data = req && req.appControl && req.appControl.data || [];
+        for (var i = 0; i < data.length; i++) {
+          if (data[i].key === 'source' && data[i].value && data[i].value[0]) {
+            var v = String(data[i].value[0]).toLowerCase();
+            if (/^hdmi[1-4]$/.test(v)) return v;
+          }
+        }
+      }
+    } catch (e) { /* no launch data */ }
+    return null;
+  }
+  window.FrameDevice = { launch: launch, launchApp: launchApp, art: art, home: home, settings: settings, apps: apps, videoSources: videoSources, showSource: showSource, hideSource: hideSource, requestedSource: requestedSource };
 }());
