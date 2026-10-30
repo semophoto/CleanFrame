@@ -10,18 +10,21 @@ manifest = XML.parse(app / 'config.xml').getroot()
 ns = {'w': 'http://www.w3.org/ns/widgets', 't': 'http://tizen.org/ns/widgets'}
 identity = manifest.find('t:application', ns)
 assert identity is not None, 'Missing application identity'
-assert identity.get('package') == 'nClrkHome1', 'Keep the installed package identity stable'
-assert identity.get('id') == 'nClrkHome1.FrameHome', 'Keep the installed application ID stable'
+assert identity.get('package') == '2WypXqAbpb', "Keep this TV's package identity stable"
+assert identity.get('id') == '2WypXqAbpb.CleanFrame', 'Keep the installed application ID stable'
 assert manifest.get('version') == json.loads((root / 'package.json').read_text())['version'], 'Manifest/package versions differ'
 for tag in ['content', 'icon']:
     node = manifest.find('w:' + tag, ns)
     assert node is not None and (app / node.get('src', '')).is_file(), 'Missing ' + tag + ' file'
-assert all((app / name).is_file() for name in ['main.js', 'style.css'])
+assert all((app / name).is_file() for name in ['main.js', 'style.css', 'widgets.js'])
+privileges = [p.get('name') for p in manifest.findall('t:privilege', ns)]
+assert 'http://tizen.org/privilege/internet' in privileges, 'Weather needs the internet privilege'
+assert any(a.get('origin') == 'https://api.open-meteo.com' for a in manifest.findall('w:access', ns)), 'Weather needs access to api.open-meteo.com'
 for reference in ['assets/wallpapers/catalog.js', 'assets/adaptive-ink.js', 'assets/font-catalog.js']:
     assert (app / reference).is_file(), 'Missing runtime catalogue: ' + reference
 for filename in ['index.html']:
     source = (app / filename).read_text()
-    pattern = r'(?:src|href)=[\"\']([^\"\']+)' if filename.endswith('.html') else r'from\s+[\"\']([^\"\']+)'
+    pattern = r'(?:src|href)=[\"\']([^\"\']+)' if filename.endswith('.html') else r'from\s+[\"\']([^\"\']+)'  
     for reference in re.findall(pattern, source):
         if ':' in reference or reference.startswith('$'):
             continue
