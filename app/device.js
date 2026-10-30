@@ -106,7 +106,7 @@
     try {
       var m = /[?&]source=(hdmi[1-4])/i.exec(window.location.search || '');
       if (m) return m[1].toLowerCase();
-      if (window.tizen && window.tizen.application) {
+      if (window.tizen && tizen.application) {
         var req = tizen.application.getCurrentApplication().getRequestedAppControl();
         var data = req && req.appControl && req.appControl.data || [];
         for (var i = 0; i < data.length; i++) {
