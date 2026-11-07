@@ -17,14 +17,18 @@
     { url: 'https://ipwho.is/', read: function (d) { return d.success === false ? null : { lat: d.latitude, lng: d.longitude, city: d.city }; } }
   ];
   /* Umm al-Qura: Fajr 18.5°, Isha 90 minutes after Maghrib (120 in Ramadan), Asr shadow factor 1. */
-  var DEFAULTS = { place: 'auto', hours: 12, fajr: 18.5, ishaMin: 90, asr: 1, weather: true, prayer: true, radar: true, dock: 'standard' };
+  /* Taif is the default: IP lookups in Saudi Arabia often name Jeddah, Makkah or Riyadh instead. Automatic stays a choice. */
+  var DEFAULTS = { place: 'taif', hours: 12, fajr: 18.5, ishaMin: 90, asr: 1, weather: true, prayer: true, radar: true, dock: 'standard', care: true };
+  var VERSION = 3, RADAR_HOST = 'https://tilecache.rainviewer.com';
   var NAMES = [['fajr', 'Fajr'], ['sunrise', 'Sunrise'], ['dhuhr', 'Dhuhr'], ['asr', 'Asr'], ['maghrib', 'Maghrib'], ['isha', 'Isha']];
   var SHOWN = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
   var WMO = { 0: 'Clear', 1: 'Mostly clear', 2: 'Partly cloudy', 3: 'Cloudy', 45: 'Fog', 48: 'Fog', 51: 'Drizzle', 53: 'Drizzle', 55: 'Drizzle',
     61: 'Rain', 63: 'Rain', 65: 'Heavy rain', 66: 'Freezing rain', 67: 'Freezing rain', 71: 'Snow', 73: 'Snow', 75: 'Heavy snow', 77: 'Snow',
     80: 'Showers', 81: 'Showers', 82: 'Heavy showers', 85: 'Snow showers', 86: 'Snow showers', 95: 'Thunderstorm', 96: 'Thunderstorm', 99: 'Thunderstorm' };
   var saved = readSaved(), config = settings(saved), detected = readDetected(saved), weather = readWeather(saved);
-  var fetching = false, retryAt = 0, locating = false, locateRetryAt = 0, listeners = [];
+  var fetching = false, retryAt = 0, weatherFails = 0, locating = false, locateRetryAt = 0, locateFails = 0, listeners = [];
+  /* Failed requests retry quickly at first (the network is often still starting after the TV wakes), then back off. */
+  function backoff(fails, cap) { return Math.min(cap, 30000 * Math.pow(2, Math.min(fails, 8))); }
 
   function readSaved() {
     try { var s = JSON.parse(localStorage.getItem(KEY) || 'null'); return s && typeof s === 'object' && !Array.isArray(s) ? s : {}; }
@@ -38,6 +42,8 @@
     if (c.place !== 'auto' && !place(c.place)) c.place = 'auto';
     if (c.hours !== 12 && c.hours !== 24) c.hours = 12;
     if (c.dock !== 'lower') c.dock = 'standard';
+    // Saves from before Taif became the default move to Taif once; choosing Automatic again sticks.
+    if ((s.version || 0) < VERSION && from.place === 'auto') c.place = 'taif';
     return c;
   }
   function readDetected(s) {
@@ -48,11 +54,11 @@
   function readWeather(s) {
     var w = s.weather;
     return w && typeof w === 'object' && isFinite(w.at) && isFinite(w.temp)
-      ? { at: w.at, lat: w.lat, lng: w.lng, temp: w.temp, code: w.code, rain: !!w.rain, hi: isFinite(w.hi) ? w.hi : null, lo: isFinite(w.lo) ? w.lo : null }
+      ? { at: w.at, lat: w.lat, lng: w.lng, temp: w.temp, code: w.code, rain: !!w.rain, snow: !!w.snow, hi: isFinite(w.hi) ? w.hi : null, lo: isFinite(w.lo) ? w.lo : null }
       : null;
   }
   function writeSaved() {
-    try { localStorage.setItem(KEY, JSON.stringify({ version: 2, config: config, detected: detected, weather: weather })); } catch (e) { /* preferences stay in memory */ }
+    try { localStorage.setItem(KEY, JSON.stringify({ version: VERSION, config: config, detected: detected, weather: weather })); } catch (e) { /* preferences stay in memory */ }
   }
   function here() {
     if (config.place !== 'auto') { var p = place(config.place); return { lat: p.lat, lng: p.lng, city: p.city, source: 'manual' }; }
@@ -88,7 +94,7 @@
     var moved = !detected || Math.abs(detected.lat - p.lat) > 0.05 || Math.abs(detected.lng - p.lng) > 0.05, near = nearest(p);
     detected = { lat: Math.round(p.lat * 1e4) / 1e4, lng: Math.round(p.lng * 1e4) / 1e4, method: method, at: Date.now(),
       city: near ? near.city : typeof p.city === 'string' && p.city ? p.city.slice(0, 60) : 'Current location' };
-    locating = false;
+    locating = false; locateFails = 0;
     if (moved) { weather = null; retryAt = 0; }
     writeSaved(); notify();
   }
@@ -109,7 +115,7 @@
     if (!force && now < locateRetryAt) return;
     locating = true;
     fromDevice(function attempt() {
-      if (i >= LOCATORS.length) { locating = false; locateRetryAt = Date.now() + RETRY_MS * 6; notify(); return; }
+      if (i >= LOCATORS.length) { locating = false; locateRetryAt = Date.now() + backoff(locateFails++, RETRY_MS * 6); notify(); return; }
       var locator = LOCATORS[i++];
       get(locator.url, function (data) {
         var p = null;
@@ -163,7 +169,14 @@
     });
     return out;
   }
+  var ramadanDay = '', ramadanValue = false;
   function ramadan(date) {
+    // Building an Islamic-calendar formatter is slow on the TV, so answer once per day.
+    var day = date.getFullYear() + '-' + date.getMonth() + '-' + date.getDate();
+    if (day !== ramadanDay) { ramadanDay = day; ramadanValue = ramadanNow(date); }
+    return ramadanValue;
+  }
+  function ramadanNow(date) {
     try {
       var parts = new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', { month: 'numeric' }).formatToParts(date);
       for (var i = 0; i < parts.length; i++) if (parts[i].type === 'month') return Number(parts[i].value) === 9;
@@ -183,8 +196,15 @@
     var m = Math.max(0, Math.ceil(ms / 60000)), h = Math.floor(m / 60);
     return h ? h + 'h ' + (m % 60) + 'm' : m + 'm';
   }
+  /* The caption asks on every key press; the answer only changes once a minute. */
+  var prayerKey = '', prayerValue = null;
   function prayers(now) {
     now = now || new Date();
+    var at = here(), key = Math.floor(now.getTime() / 60000) + '|' + now.getTimezoneOffset() + '|' + at.lat + ',' + at.lng + '|' + config.fajr + '|' + config.ishaMin + '|' + config.asr + '|' + config.hours;
+    if (key !== prayerKey) { prayerKey = key; prayerValue = prayersNow(now); }
+    return prayerValue;
+  }
+  function prayersNow(now) {
     var today = prayerTimes(now), list = [], next = null;
     SHOWN.forEach(function (id) {
       var at = today[id];
@@ -202,8 +222,13 @@
 
   /* ---------- Weather ---------- */
   /* One request covers the location and four points about 45 km away, so "rain nearby" needs no image analysis. */
-  var RING = [[0, 0], [0.4, 0], [-0.4, 0], [0, 0.45], [0, -0.45]], WET = [51, 53, 55, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99];
-  function dayNum(arr) { var v = arr && arr[0]; return v != null && isFinite(v) ? Math.round(v) : null; }
+  var RING = [[0, 0], [0.4, 0], [-0.4, 0], [0, 0.45], [0, -0.45]], WET = [51, 53, 55, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99];
+  var SNOW = [71, 73, 75, 77, 85, 86];
+  function dayNum(arr) { var v = arr && arr[0]; return v !== null && v !== undefined && isFinite(v) ? Math.round(v) : null; }
+  function snowy(point) {
+    var cur = point && point.current;
+    return !!cur && SNOW.indexOf(cur.weather_code) >= 0;
+  }
   function wet(point) {
     var cur = point && point.current, hourly = point && point.hourly && point.hourly.precipitation, i;
     if (!cur) return false;
@@ -225,8 +250,9 @@
       + '&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1', function (data) {
       fetching = false;
       var points = Array.isArray(data) ? data : data ? [data] : [], first = points[0], cur = first && first.current, day = first && first.daily;
-      if (!cur || !isFinite(cur.temperature_2m)) { retryAt = Date.now() + RETRY_MS; notify(); return; }
-      weather = { at: Date.now(), lat: at.lat, lng: at.lng, temp: Math.round(cur.temperature_2m), code: cur.weather_code, rain: points.some(wet),
+      if (!cur || !isFinite(cur.temperature_2m)) { retryAt = Date.now() + backoff(weatherFails++, RETRY_MS); notify(); return; }
+      weatherFails = 0;
+      weather = { at: Date.now(), lat: at.lat, lng: at.lng, temp: Math.round(cur.temperature_2m), code: cur.weather_code, rain: points.some(wet), snow: points.some(snowy),
         hi: dayNum(day && day.temperature_2m_max), lo: dayNum(day && day.temperature_2m_min) };
       writeSaved(); notify();
       if (weather.rain) refreshRadar(true);
@@ -249,15 +275,23 @@
     get('https://api.rainviewer.com/public/weather-maps.json', function (data) {
       radarFetching = false;
       var past = data && data.radar && data.radar.past, last = past && past[past.length - 1];
-      if (!last || typeof data.host !== 'string' || typeof last.path !== 'string' || !/^https:\/\/[a-z0-9.-]+$/.test(data.host)) { radarRetryAt = Date.now() + RETRY_MS; return; }
+      if (!last || typeof data.host !== 'string' || typeof last.path !== 'string' || !/^https:\/\/[a-z0-9.-]+$/.test(data.host) || data.host !== RADAR_HOST) { radarRetryAt = Date.now() + RETRY_MS; return; }
       radar = { checked: Date.now(), host: data.host, path: last.path, time: last.time * 1000 };
       notify();
     });
   }
+  var radarKey = '', radarValue = null;
   function radarState() {
-    var at = here(), n, cx, cy, x0, y0, x1, y1, tiles = [], x, y, wrap;
+    var at = here(), key;
     refreshRadar(false);
     if (!config.radar || !weather || !weather.rain || !radar) return null;
+    // Same object until the radar frame, place or clock format changes, so the page can skip rebuilding it.
+    key = radar.path + '|' + radar.time + '|' + at.lat + ',' + at.lng + '|' + config.hours + '|' + !!weather.snow;
+    if (key !== radarKey) { radarKey = key; radarValue = radarBuild(at); }
+    return radarValue;
+  }
+  function radarBuild(at) {
+    var n, cx, cy, x0, y0, x1, y1, tiles = [], x, y, wrap;
     n = Math.pow(2, RADAR_ZOOM);
     cx = (at.lng + 180) / 360 * n * TILE;
     cy = (1 - Math.log(Math.tan(at.lat * RAD) + 1 / Math.cos(at.lat * RAD)) / Math.PI) / 2 * n * TILE;
@@ -269,9 +303,15 @@
         base: 'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/' + RADAR_ZOOM + '/' + y + '/' + wrap,
         rain: radar.host + radar.path + '/' + TILE + '/' + RADAR_ZOOM + '/' + wrap + '/' + y + '/2/1_1.png' });
     }
-    return { city: at.city, time: clock(new Date(radar.time)), width: RADAR_W, height: RADAR_H, tiles: tiles };
+    return { city: at.city, snow: !!weather.snow, time: clock(new Date(radar.time)), width: RADAR_W, height: RADAR_H, tiles: tiles };
   }
   function notify() { listeners.forEach(function (fn) { try { fn(); } catch (e) { /* listener errors stay local */ } }); }
+
+  /* Back online (often just after the TV wakes): try again now instead of waiting out the retry delay. */
+  if (window.addEventListener) window.addEventListener('online', function () {
+    retryAt = 0; locateRetryAt = 0; radarRetryAt = 0; weatherFails = 0; locateFails = 0;
+    locate(false); refreshWeather(false);
+  });
 
   window.CleanFrameWidgets = {
     state: function (now) {
@@ -290,11 +330,13 @@
     configure: function (patch) {
       var k, before = config.place;
       for (k in patch) if (patch.hasOwnProperty(k) && DEFAULTS.hasOwnProperty(k) && typeof patch[k] === typeof DEFAULTS[k]) config[k] = patch[k];
-      config = settings({ config: config });
+      config = settings({ version: VERSION, config: config });
       if (config.place !== before) { weather = null; retryAt = 0; if (config.place === 'auto') locate(true); }
       writeSaved(); refreshWeather(false); notify();
       return JSON.parse(JSON.stringify(config));
     },
-    config: function () { return JSON.parse(JSON.stringify(config)); }
+    config: function () { return JSON.parse(JSON.stringify(config)); },
+    /* One setting without copying the whole config, for code that runs on every render. */
+    value: function (k) { return DEFAULTS.hasOwnProperty(k) ? config[k] : undefined; }
   };
 }());

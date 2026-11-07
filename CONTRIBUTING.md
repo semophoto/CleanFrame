@@ -10,6 +10,7 @@ Use the README's public-font setup. Keep changes in `app/` and the maintained to
 npm ci
 npm run dev:public
 npm run check
+npm run check:tools
 npx playwright install chromium
 CLEANFRAME_PUBLIC_FONTS=1 npm run check:browser
 npm run check:public

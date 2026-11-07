@@ -5,31 +5,59 @@ This is a bounded release check, not a licence or complete secret audit.
 from pathlib import Path
 import hashlib
 import json
-import re
 import subprocess
 
 from font_assets import ROOT
+from private_files import private_path, secret_content
 
 
 def git(*args):
     return subprocess.check_output(['git', *args], cwd=ROOT)
 
 
+def secret_blobs(ids):
+    """Batch reads keep index/history scanning fast and never print blob data."""
+    ids = sorted(set(ids))
+    if not ids:
+        return set()
+    metadata = subprocess.check_output(['git', 'cat-file', '--batch-check'],
+                                       input=('\n'.join(ids) + '\n').encode(), cwd=ROOT)
+    # Gitlinks may refer to objects held only in another repository.
+    blobs = []
+    for line in metadata.splitlines():
+        fields = line.split()
+        if len(fields) == 3 and fields[1] == b'blob':
+            blobs.append(fields[0].decode())
+    ids = blobs
+    if not ids:
+        return set()
+    output = subprocess.check_output(['git', 'cat-file', '--batch'],
+                                     input=('\n'.join(ids) + '\n').encode(), cwd=ROOT)
+    found = set()
+    offset = 0
+    for _ in ids:
+        end = output.index(b'\n', offset)
+        oid, kind, size = output[offset:end].split()
+        offset = end + 1
+        size = int(size)
+        if secret_content(output[offset:offset + size]):
+            found.add(oid.decode())
+        offset += size + 1
+    return found
+
+
 candidates = set(git('ls-files', '--cached', '--others', '--exclude-standard', '-z').decode().split('\0')) - {''}
-objects = git('rev-list', '--objects', '--all').decode().splitlines()
 findings = []
 font_suffixes = {'.ttf', '.otf', '.woff', '.woff2', '.eot'}
-private_suffixes = {'.p12', '.pem', '.key', '.csr', '.wgt'}
 
 
 def forbidden(name):
     path = Path(name)
     return (name.startswith(('.local/', 'dist/', 'node_modules/', 'app/assets/private-fonts/',
                                     'explorations/', 'docs/research/', 'docs/articles/'))
-            or path.suffix.lower() in private_suffixes
-            or (path.name.startswith('PP') and path.suffix.lower() in font_suffixes)
-            or path.name.startswith('.env.')
-            or path.name in {'certificate-password.txt', 'profiles.xml', '.env', 'session.json'})
+            or private_path(name) or path.suffix.lower() in {'.wgt', '.dll', '.pdb', '.exe'}
+            or any(part.lower() in {'bin', 'obj'} for part in path.parts)
+            or (path.name.startswith('PP') and path.suffix.lower() in font_suffixes))
 
 
 public_fonts = {'app/assets/manrope.woff2': 'e310b55a7fd9677f5e3555e6c6c4d064fa1f1d24393f0ddbe217cea12a8c432f'}
@@ -49,22 +77,44 @@ for name in sorted(candidates):
     if path.suffix.lower() in font_suffixes:
         if name not in public_fonts or hashlib.sha256(path.read_bytes()).hexdigest() != public_fonts[name]:
             findings.append('Unrecognised or changed public font: ' + name)
-    try:
-        content = path.read_text()
-    except UnicodeError:
-        continue
     # Print filenames only, so a failing check does not leak a matched credential.
-    patterns = [r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----',
-                r'gh[pousr]_[A-Za-z0-9]{25,}', r'github_pat_[A-Za-z0-9_]{25,}',
-                r'AKIA[A-Z0-9]{16}']
-    if any(re.search(pattern, content) for pattern in patterns):
+    if secret_content(path.read_bytes()):
         findings.append('Credential pattern: ' + name)
 
-object_ids = {line.split(' ', 1)[0] for line in objects}
-for line in objects:
-    parts = line.split(' ', 1)
-    if len(parts) == 2 and forbidden(parts[1]):
-        findings.append('Private/generated path in reachable Git history: ' + parts[1])
+index = []
+for entry in git('ls-files', '--stage', '-z').decode().split('\0'):
+    if not entry:
+        continue
+    metadata, name = entry.split('\t', 1)
+    mode, oid, stage = metadata.split()
+    index.append((name, oid))
+    if mode == '120000' or forbidden(name):
+        findings.append('Private/generated or symlink path in Git index: ' + name)
+
+history = set()
+# rev-list --objects records only one path per object. A later rename could hide
+# a private filename, so inspect each distinct committed tree with NUL records.
+for tree in sorted(set(git('log', '--all', '--format=%T').decode().splitlines())):
+    for entry in git('ls-tree', '-r', '-z', tree).decode().split('\0'):
+        if not entry:
+            continue
+        metadata, name = entry.split('\t', 1)
+        mode, kind, oid = metadata.split()
+        if forbidden(name):
+            findings.append('Private/generated path in reachable Git history: ' + name)
+        if mode == '120000':
+            findings.append('Symlink in reachable Git history: ' + name)
+        if kind == 'blob':
+            history.add((name, oid))
+
+object_ids = {oid for _, oid in history}
+unsafe_blobs = secret_blobs(object_ids | {oid for _, oid in index})
+for name, oid in index:
+    if oid in unsafe_blobs:
+        findings.append('Credential pattern in Git index: ' + name)
+for name, oid in history:
+    if oid in unsafe_blobs:
+        findings.append('Credential pattern in reachable Git history: ' + name)
 private_root = ROOT / '.local/research/font-candidates'
 private_fonts = [p for p in private_root.rglob('*') if p.is_file() and p.name.startswith('PP') and p.suffix.lower() in font_suffixes]
 for path in private_fonts:

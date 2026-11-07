@@ -83,11 +83,14 @@ try {
   page.on('pageerror', error => report.errors.push(error.message));
   page.on('response', response => { if (response.status() >= 400) report.errors.push(response.status() + ' ' + response.url()); });
   page.on('requestfailed', request => { if (!page.__closing && request.failure()?.errorText !== 'net::ERR_ABORTED') report.errors.push(request.failure()?.errorText + ' ' + request.url()); });
+  // Weather, radar and IP location are answered locally so results never depend on the internet.
+  await page.route('https://api.open-meteo.com/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ current: { temperature_2m: 30, weather_code: 0, precipitation: 0 }, hourly: { precipitation: [0, 0] }, daily: { temperature_2m_max: [33], temperature_2m_min: [22] } }) }));
+  await page.route(/^https:\/\/(ipapi\.co|ipwho\.is|api\.rainviewer\.com)\//, route => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
   await page.addInitScript(() => {
+    // The S85F inventory: the two Home apps plus other installed consumer apps.
     const primary = [
-      ['IkWsFHtOY9.Stremio', 'Stremio'], ['org.tizen.netflix-app', 'Netflix'], ['MCmYXNxgcu.DisneyPlus', 'Disney+'],
-      ['9Ur5IzDKqV.TizenYouTube', 'YouTube'], ['com.samsung.tv.aria-video', 'Apple TV'], ['org.tizen.primevideo', 'Prime Video'],
-      ['mWK87Xghap.ABCiview', 'ABC iview'], ['OyE7OuxlUi.SBSOnDemand', 'SBS On Demand'], ['org.tizen.apple.apple-music', 'Apple Music']
+      ['NuvioTV001.NuvioTV', 'Nuvio TV'], ['xvvl3S1TT1.TizenTubeStandalone', 'TizenTube'], ['MoonLightS.MoonlightWasm', 'Moonlight'],
+      ['xvvl3S1bvH.TizenBrewStandalone', 'TizenBrew'], ['HEPsqFNie0.tvplusstandalone', 'Samsung TV Plus']
     ];
     const catalogue = primary.map(([id, name]) => ({ id, name, show: true, iconPath: '' }));
     for (let i = 0; i < 14; i++) catalogue.push({ id: 'Qa12345678.Stream' + i, name: 'Streaming app ' + String(i + 1).padStart(2, '0'), show: true, iconPath: '' });
@@ -95,7 +98,7 @@ try {
       getAppsInfo(ok) { setTimeout(() => ok(catalogue), 0); },
       launch(id, ok) { setTimeout(ok, 0); }
     } };
-    localStorage.setItem('cleanframe.home.v1', JSON.stringify({ dock: ['stremio', 'netflix', 'disneyplus', 'youtube', 'appletv', 'primevideo', 'abciview', 'sbs', 'applemusic'], wallpaper: 'misty', mode: 'fixed', theme: 'shore', lastApp: 'netflix' }));
+    localStorage.setItem('cleanframe.home.v1', JSON.stringify({ dock: ['nuvio', 'tizentube', 'art', 'hdmi1', 'hdmi2'], wallpaper: 'misty', mode: 'fixed', theme: 'shore', lastApp: 'nuvio' }));
   });
   cdp = await page.context().newCDPSession(page);
   await cdp.send('Performance.enable');
@@ -116,11 +119,11 @@ try {
   await scene('settings');
   await sample('Settings navigation', ['down', 'down', 'up', 'up']);
   await scene('apps');
-  check('Performance inventory includes 23 real-adapter rows', (await call('state')).catalog.ids.length === 23);
+  check('Performance inventory includes 19 real-adapter rows', (await call('state')).catalog.ids.length === 19);
   await sample('All Apps grid navigation', ['down', 'down', 'right', 'up', 'up', 'left']);
   await scene('editor');
   await sample('Apps on Home navigation', ['down', 'down', 'down', 'up', 'up', 'up']);
-  await call('activate', 'editor.move.netflix');
+  await call('activate', 'editor.move.tizentube');
   await sample('Picked-up app movement', ['down', 'up'], 6);
   await call('nav', 'back');
   await scene('appearance');

@@ -7,23 +7,23 @@
   var CAP = 9, SCRIM_Y = 560;
   var DOCK_MODES = { both: { tw: 288, th: 200, pitch: 296 }, text: { tw: 288, th: 104, pitch: 296 }, icons: { tw: 176, th: 144, pitch: 184 } };
   var GRID_ROW = 240, GRID_COL = 344, COLS = 5;
-  var ED_ROW = 80, ED_SEP = 56, ED_VIEW = 752, STRIP_PITCH = 188;
-  var PH_TOP = 220, PH_PITCH = 128, PH_FULL = 5, PH_HEIGHT = 944, PH_COMPACT_TOP = 144, PH_COMPACT_PITCH = 88, PH_COMPACT_VISIBLE = 9;
+  var ED_ROW = 80, ED_SEP = 56, ED_VIEW = 752;
+  var PH_TOP = 220, PH_PITCH = 128, PH_FULL = 5, PH_HEIGHT = 944;
   var WALL_VISIBLE = 6, WALL_ROW = 92, WALL_DELAY = 200;
   var KEYS = { 37: 'left', 38: 'up', 39: 'right', 40: 'down', 13: 'ok', 27: 'back', 8: 'back', 10009: 'back', 461: 'back' };
   var FULL = 'Home holds nine apps. Remove one first.', LAST = 'Home needs one app';
 
   var PRIMARY_APPS = [
-    { id: 'stremio', name: 'Stremio', mark: true, appId: 'IkWsFHtOY9.Stremio' },
-    { id: 'netflix', name: 'Netflix', mark: true, appId: 'org.tizen.netflix-app' },
-    { id: 'disneyplus', name: 'Disney+', mark: true, appId: 'MCmYXNxgcu.DisneyPlus' },
-    { id: 'youtube', name: 'YouTube', mark: true, appId: '9Ur5IzDKqV.TizenYouTube' },
-    { id: 'appletv', name: 'Apple TV', mark: true, appId: 'com.samsung.tv.aria-video' },
-    { id: 'primevideo', name: 'Prime Video', mark: true, appId: 'org.tizen.primevideo' },
-    { id: 'abciview', name: 'ABC iview', mark: true, appId: 'mWK87Xghap.ABCiview' },
-    { id: 'sbs', name: 'SBS On Demand', mark: true, appId: 'OyE7OuxlUi.SBSOnDemand' },
-    { id: 'applemusic', name: 'Apple Music', mark: true, appId: 'org.tizen.apple.apple-music' }
+    { id: 'nuvio', name: 'Nuvio TV', mark: false, appId: 'NuvioTV001.NuvioTV' },
+    { id: 'tizentube', name: 'TizenTube', mark: false, appId: 'xvvl3S1TT1.TizenTubeStandalone' },
+    { id: 'art', name: 'Art Mode', mark: true, appId: 'org.tizen.art-app', action: 'art' },
+    { id: 'hdmi1', name: 'HDMI 1', mark: true, brand: 'hdmi', appId: 'hdmi1', action: 'hdmi', port: 1 },
+    { id: 'hdmi2', name: 'HDMI 2', mark: true, brand: 'hdmi', appId: 'hdmi2', action: 'hdmi', port: 2 },
+    { id: 'hdmi3', name: 'HDMI 3', mark: true, brand: 'hdmi', appId: 'hdmi3', action: 'hdmi', port: 3 },
+    { id: 'hdmi4', name: 'HDMI 4', mark: true, brand: 'hdmi', appId: 'hdmi4', action: 'hdmi', port: 4 }
   ];
+  /* New installations start with the apps; connected HDMI ports join Home once they are detected. */
+  var DEFAULT_HOME = ['nuvio', 'tizentube', 'art'], SOURCES_KEY = 'cleanframe.sources.v1', DOCK_LOWER = 80, lastSources = 0;
   var PRIMARY = PRIMARY_APPS.map(function (a) { return a.id; }), APPS = PRIMARY_APPS.slice(), ALPHA = [];
   var WALLS = window.CleanFrameWallpapers || [{ id: 'misty', name: 'Misty coast', tone: 'light', ut: { tr: 'mist', br: 'mist' }, frostVeil: .20 }];
   var ADAPTIVE_INK = window.CleanFrameAdaptiveInk || {};
@@ -34,7 +34,7 @@
     { id: '60', name: 'Every hour', min: 60 }
   ];
   var KEY = 'cleanframe.home.v1', storageOk = true, catalog = { loading: false, loaded: false, error: null, request: 0, revision: 0 };
-  var QA = window.ShoreQA = { minuteMs: window.ShoreQA && window.ShoreQA.minuteMs || 60000 };
+  var QA = window.ShoreQA = { minuteMs: window.ShoreQA && window.ShoreQA.minuteMs || 60000, idleMinuteMs: window.ShoreQA && window.ShoreQA.idleMinuteMs || 0 };
   var FONTS = {
     manrope: { name: 'Manrope', family: 'Manrope', display: 600, ui: 500, clock: 500 },
     montreal: { name: 'Neue Montreal', family: 'Study Montreal', display: 300, ui: 400, clock: 300 },
@@ -43,19 +43,17 @@
     geist: { name: 'Geist', family: 'Study Geist', display: 300, ui: 400, clock: 300 },
     newsreader: { name: 'Newsreader', family: 'Study Newsreader', display: 400, ui: 400, clock: 400 }
   };
-  var PRIVATE_FONTS = window.CleanFramePrivateFontIDs || [], fontMetrics = {}, unavailableFonts = {}, widthCache = {}, fontsReady = false;
-  var LOOK_KEYS = ['bg', 'layout', 'apps', 'font', 'controls', 'focus', 'material'];
+  var PRIVATE_FONTS = window.CleanFramePrivateFontIDs || [], fontMetrics = {}, unavailableFonts = {}, widthCache = {}, fontRevision = 0, fontsReady = false;
   var LOOK_VALUES = { bg: ['dark', 'light', 'photo'], layout: ['list', 'dock'], apps: ['icons', 'both', 'text'], font: Object.keys(FONTS).filter(function (id) { return id === 'manrope' || PRIVATE_FONTS.indexOf(id) >= 0; }), controls: ['icons', 'both', 'text'], focus: ['type', 'glass'], material: ['soft', 'frost', 'tint'] };
   var LOOK_NAMES = { bg: 'Background', layout: 'Layout', apps: 'Apps', font: 'Font', controls: 'Home controls', focus: 'Focus', material: 'Material' };
   var VALUE_NAMES = { dark: 'Dark', light: 'Light', photo: 'Photo', list: 'List', dock: 'Dock', type: 'Type', glass: 'Glass', soft: 'Soft', frost: 'Frost', tint: 'Clear tint', icons: 'Icons', both: 'Icons and text', text: 'Text' };
-  var UTIL = { art: ['Art Mode', 'art'], apps: ['All apps', 'apps'], arrange: ['Arrange', 'arrange'], settings: ['Settings', 'settings'] };
+  var UTIL = { art: ['Art Mode', 'art'], apps: ['All apps', 'apps'], settings: ['Settings', 'settings'] };
   var MSG = {
     leave: { title: 'Leave Home?', line: 'Open Samsung Home?', note: '', actions: [['stay', 'Stay'], ['samsung', 'Samsung Home']] }
   };
   var SVG = {
     art: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="9.8" r="1.5"/><path d="m4.5 17.5 4.5-4.5 3 3 2.5-2.5 5 5"/>',
     apps: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.6"/>',
-    arrange: '<path d="M4 8.5h14M15 5.5l3 3-3 3M20 15.5H6M9 12.5l-3 3 3 3"/>',
     settings: '<path d="m9 3-.6 2.4-2 1.2L4 6l-2 3.5L3.8 11v2L2 14.5 4 18l2.4-.6 2 1.2L9 21h6l.6-2.4 2-1.2 2.4.6 2-3.5-1.8-1.5v-2L22 9.5 20 6l-2.4.6-2-1.2L15 3Z"/><circle cx="12" cy="12" r="3.2"/>',
     home: '<path d="M4 11 12 4.5l8 6.5v8a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1Z"/>',
     undo: '<path d="M9 6 5 10l4 4"/><path d="M5 10h9.5a4.5 4.5 0 0 1 0 9H11"/>',
@@ -80,7 +78,7 @@
     wallShown: null, wallPending: null, wallError: null,
     shown: null, pending: null, lookError: null, bundleKey: null, previewBundle: null, reflow: false, fontSwitch: false
   };
-  var scroll = { first: 0, off: 0, photo: 0, photoArrange: 0 };
+  var scroll = { first: 0, off: 0, photo: 0 };
   function pick(v, list, fallback) {
     v = String(v || '').toLowerCase();
     for (var i = 0; i < list.length; i++) if (list[i].toLowerCase() === v) return list[i];
@@ -88,7 +86,6 @@
   }
   function lookOf(c) { return { bg: c.bg, wall: c.wall, layout: c.layout, apps: c.apps, font: c.font, controls: c.controls, focus: c.focus, material: c.material }; }
   function materialApplies(c) { c = c || S.c; return c.bg === 'photo' && (c.layout === 'dock' || c.focus === 'glass'); }
-  function derivedTheme() { return S.c.layout === 'list' ? 'list' : 'shore'; }
 
   /* ---------- Helpers ---------- */
   function app(id) { for (var i = 0; i < APPS.length; i++) if (APPS[i].id === id) return APPS[i]; return null; }
@@ -102,7 +99,6 @@
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function onHome(id) { return S.c.home.indexOf(id) >= 0; }
   function top() { return S.stack[S.stack.length - 1]; }
-  function inStack(id) { for (var i = S.stack.length - 1; i >= 0; i--) if (S.stack[i].id === id) return S.stack[i]; return null; }
   function push(e) { S.stack.push(e); return e; }
   function pop() { if (S.stack.length > 1) S.stack.pop(); }
   function px(n) { return n.toFixed(2) + 'px'; }
@@ -213,6 +209,8 @@
       ended = true; clearTimeout(timer);
       if (ok) {
         fontMetrics[id] = measureFace(id, faces); delete unavailableFonts[id];
+        // Measurements and cached markup belong to a particular loaded font.
+        widthCache = {}; fontRevision++;
         if (id === 'manrope') fontsReady = true;
       } else if (reason !== 'timeout') unavailableFonts[id] = true;
       fontChoices(); done(ok, reason);
@@ -235,6 +233,7 @@
             delete fontMetrics.manrope; delete unavailableFonts.manrope;
             loadFont('manrope', function (loaded) {
               if (!loaded) { fontMetrics.manrope = measureFace('manrope', []); fontMetrics.manrope.fallback = true; fontsReady = true; }
+              flushWidthCache('manrope');
               render();
             });
           });
@@ -265,23 +264,30 @@
       width = measureContext.measureText(text).width;
     }
     width += Math.max(0, text.length - 1) * (spacing || 0);
-    // Do not retain fallback measurements made before the baseline font is ready.
-    if (fontMetrics[id]) widthCache[key] = width;
+    // Cache only once the font has real metrics: widths measured while the fallback
+    // face stands in for the baseline are not cached, and the recovery path flushes
+    // anything still cached when the fallback is replaced.
+    var fm = fontMetrics[id];
+    if (fm && !fm.fallback) widthCache[key] = width;
     return width;
+  }
+  /* Cache keys start with the font id, so one font's entries can be dropped when its
+     metrics are replaced (the baseline face recovering from its local fallback). */
+  function flushWidthCache(id) {
+    var prefix = id + '|', k;
+    for (k in widthCache) if (widthCache.hasOwnProperty(k) && k.indexOf(prefix) === 0) delete widthCache[k];
   }
   function dockLabelSize(id) { return S.c.apps === 'text' ? (textWidth(app(id).name, 40, 600, -.8, 'primary') > 264 ? 34 : 40) : textWidth(app(id).name, 36, 500, -.8, 'primary') > 280 ? 32 : 36; }
   function reducedDockLabel(id) { return S.c.apps !== 'icons' && dockLabelSize(id) === (S.c.apps === 'text' ? 34 : 32); }
-  function actionWidth(text) { return clamp(Math.ceil(textWidth(text, 30, 500, -.3) + 40), 288, 400); }
-  function photoLabel(id, compact) {
-    var text = app(id).name, size = compact ? 56 : 88, limit = compact ? 640 : 992, width = textWidth(text, size, 600, -1.8, 'display');
-    if (!compact && width > limit) { size = 76; width = textWidth(text, size, 600, -1.8, 'display'); }
-    // Newsreader's ninth compact Type row otherwise enters the lower fade by .63px.
-    return { size: size, top: (compact ? 10.66 : size === 76 ? 10.36 : 9.68) + fontShift('display', size) - (compact && homeFont() === 'newsreader' ? .7 : 0), width: Math.min(limit, width), ellipsis: width > limit };
+  function photoLabel(id) {
+    var text = app(id).name, size = 88, limit = 992, width = textWidth(text, size, 600, -1.8, 'display');
+    if (width > limit) { size = 76; width = textWidth(text, size, 600, -1.8, 'display'); }
+    return { size: size, top: (size === 76 ? 10.36 : 9.68) + fontShift('display', size), width: Math.min(limit, width), ellipsis: width > limit };
   }
-  function listPlateWidth(id, compact) {
-    if (S.c.apps === 'icons') return compact ? 120 : 144;
+  function listPlateWidth(id) {
+    if (S.c.apps === 'icons') return 144;
     var text = S.c.apps === 'text';
-    return clamp(Math.ceil(photoLabel(id, compact).width + (text ? 84 : compact ? 156 : 184)), text ? 280 : 360, text ? compact ? 724 : 1076 : compact ? 796 : 1176);
+    return clamp(Math.ceil(photoLabel(id).width + (text ? 84 : 184)), text ? 280 : 360, text ? 1076 : 1176);
   }
 
   /* Keyed children: elements persist by key so transforms animate instead of re-creating.
@@ -297,10 +303,11 @@
     }
     for (k in map) if (map.hasOwnProperty(k) && !seen[k]) { if (map[k].parentNode === parent) parent.removeChild(map[k]); delete map[k]; }
   }
-  function setContent(el, sig, html) {
-    sig += '|' + catalog.revision;
+  function setContent(el, sig, renderContent) {
+    sig += '|' + catalog.revision + '|' + fontRevision;
     if (el._sig === sig) return;
-    el._sig = sig; el.innerHTML = html;
+    el.innerHTML = renderContent();
+    el._sig = sig;
     Array.prototype.forEach.call(el.querySelectorAll('[data-native-icon]'), function (img) {
       function ready() { img.parentNode.classList.add('has-native-icon'); }
       function failed() { img.style.display = 'none'; img.parentNode.classList.remove('has-native-icon'); }
@@ -338,7 +345,7 @@
       if (!app(id) && id.indexOf('.') > 0) APPS.push({ id: id, appId: id, name: id.split('.').pop(), mark: false });
       if (app(id)) h.push(id);
     });
-    if (!h.length) h = PRIMARY.slice();
+    if (!h.length) h = DEFAULT_HOME.slice();
     (Array.isArray(s.recent) ? s.recent : []).forEach(function (id) { if (safeId(id) && app(id) && h.indexOf(id) < 0 && recent.indexOf(id) < 0 && recent.length < 5) recent.push(id); });
     return {
       bg: pick(modern.bg, LOOK_VALUES.bg, legacyList ? 'dark' : 'photo'), layout: pick(modern.layout, LOOK_VALUES.layout, legacyList ? 'list' : 'dock'),
@@ -350,7 +357,7 @@
     };
   }
   function serialise(c) {
-    var out = {}, id;
+    var out = {};
     Object.keys(c).forEach(function (key) { out[key] = c[key]; });
     out.version = 2; out.look = lookOf(c); out.dock = c.home.slice(); out.wallpaper = c.wall;
     out.theme = c.layout === 'list' ? 'list' : 'shore';
@@ -381,11 +388,13 @@
     storageOk = true; S.c = c; S.writes++; S.err = null; log('Saved: ' + label);
     return true;
   }
-  function errText(lifted) {
-    return 'Couldn’t save. Nothing changed.';
+  function errText() {
+    // Name what failed to save when the write gave a label, so a storage problem is traceable.
+    var label = typeof S.err === 'string' && S.err ? S.err.charAt(0).toLowerCase() + S.err.slice(1) : '';
+    return label ? 'Couldn’t save ' + label + '. Nothing changed.' : 'Couldn’t save. Nothing changed.';
   }
-  function statusHtml(def, lifted) {
-    if (S.err) return '<span class="warn error-chip">' + esc(errText(lifted)) + '</span>';
+  function statusHtml(def) {
+    if (S.err) return '<span class="warn error-chip">' + esc(errText()) + '</span>';
     return esc(S.note || def);
   }
 
@@ -399,7 +408,7 @@
   }
   function setSel(id) { S.sel = id; S.selIdx = S.c.home.indexOf(id); }
 
-  /* Membership and order operations shared by B and C. A works on slots (below). */
+  /* Membership and order operations shared by the List and Dock layouts. */
   function homeRemove(id) {
     var a = app(id), i = S.c.home.indexOf(id), before = snap(), h;
     if (i < 0) return false;
@@ -425,7 +434,7 @@
     S.undo.push({ label: 'Move ' + a.name, snap: before });
     return true;
   }
-  function undoLast(arr) {
+  function undoLast() {
     var u = S.undo[S.undo.length - 1];
     if (!u) { S.note = 'Nothing to undo'; return false; }
     if (!write(next(u.snap.home.slice(), u.snap.recent.slice()), 'Undo ' + u.label)) return false;
@@ -436,7 +445,7 @@
   function undoLabel() { var u = S.undo[S.undo.length - 1]; return u ? u.label : ''; }
   function undoCaption() { var label = undoLabel(); return label ? 'Undo ' + label.charAt(0).toLowerCase() + label.slice(1) : 'Nothing to undo'; }
   function editStatus(hint, move) {
-    if (S.err) return statusHtml('', !!move);
+    if (S.err) return statusHtml('');
     if (S.note === FULL || S.note === LAST) return '<span class="warn">' + esc(S.note) + '</span>';
     if (hint === FULL || hint === LAST) return '<span class="warn">' + esc(hint) + '</span>';
     return esc(move || hint || S.note || '');
@@ -456,12 +465,45 @@
       render(); syncRotation();
     });
   }
+  /* A shown HDMI input covers the whole screen; Back hides it and returns to Home. */
+  function enterSource(a) {
+    S.source = a;
+    document.documentElement.classList.add('is-source');
+  }
+  function exitSource() {
+    if (!S.source) return;
+    S.source = null;
+    FrameDevice.hideSource();
+    document.documentElement.classList.remove('is-source');
+  }
+  function seedSources() {
+    var seeded = [];
+    try { seeded = JSON.parse(localStorage.getItem(SOURCES_KEY) || '[]'); } catch (e) { seeded = []; }
+    if (!Array.isArray(seeded)) seeded = [];
+    FrameDevice.videoSources(function (err, list) {
+      var h = S.c.home.slice(), added = [], recent = S.c.recent, i;
+      if (err || !list) return;
+      lastSources = Date.now();
+      list.forEach(function (s) {
+        var id = 'hdmi' + s.port;
+        if (s.label && app(id)) app(id).name = s.label;
+        if (!s.connected || !app(id) || seeded.indexOf(id) >= 0) return;
+        seeded.push(id);
+        if (h.indexOf(id) < 0 && h.length < CAP) { h.push(id); added.push(id); }
+      });
+      try { localStorage.setItem(SOURCES_KEY, JSON.stringify(seeded)); } catch (e) { return; }
+      for (i = 0; i < added.length; i++) recent = without(recent, added[i]);
+      if (added.length && write(next(h, recent), 'Add HDMI inputs')) { norm(); render(); }
+      else if (list.some(function (s) { return s.label; })) render();
+    });
+  }
   function launch(id) {
     var a = app(id), c;
     if (!a || busy) return;
     if (S.c.home.indexOf(id) >= 0) { c = next(S.c.home.slice(), S.c.recent.slice()); c.lastApp = id; write(c, 'Last app'); }
     S.press = id; S.lastLaunch = a.name;
-    perform(a.name, function (done) { FrameDevice.launchApp(a.appId, done); });
+    if (a.action === 'hdmi') { perform(a.name, function (done) { FrameDevice.showSource(a.port, function (err) { if (!err) enterSource(a); done(err); }); }); return; }
+    perform(a.name, a.action === 'art' ? FrameDevice.art : function (done) { FrameDevice.launchApp(a.appId, done); });
   }
   function refreshCatalog() {
     var request, oldFocus;
@@ -478,7 +520,7 @@
         if (!safeId(id) || !safeId(entry.appId) || ALPHA.indexOf(id) >= 0) return;
         a = app(id);
         if (!a) { a = { id: id }; APPS.push(a); }
-        a.appId = entry.appId; a.brand = entry.brand || ''; a.mark = !!entry.brand;
+        a.appId = entry.appId; a.brand = entry.brand || ''; a.mark = PRIMARY.indexOf(id) >= 0 ? PRIMARY_APPS[PRIMARY.indexOf(id)].mark : !!entry.brand;
         a.icon = safeIcon(entry.icon);
         a.name = PRIMARY.indexOf(id) >= 0 ? PRIMARY_APPS[PRIMARY.indexOf(id)].name : String(entry.name).slice(0, 160);
         ALPHA.push(id);
@@ -664,7 +706,7 @@
         else if (k === 'up' || k === 'left') t.f.zone = 'photo';
         return;
       }
-      if (k === 'left' || k === 'up' && t.i === 0) { t.f.zone = 'back'; t.applyPending = null; }
+      if (k === 'left' || (k === 'up' && t.i === 0)) { t.f.zone = 'back'; t.applyPending = null; }
       else if (k === 'up' && t.i > 0) previewWallpaper(t, t.i - 1, false);
       else if (k === 'down' && t.i < WALLS.length - 1) previewWallpaper(t, t.i + 1, false);
       else if ((k === 'right' || k === 'down') && t.failedId) t.f.zone = 'retry';
@@ -761,7 +803,7 @@
         if (k === 'left' && f.h > 0) f.h--;
         else if (k === 'right' && f.h < 1) f.h++;
         else if (k === 'down') { if (no) returnOther(t); else if (nh) f.zone = 'home'; }
-        else if (k === 'ok') { begin(); if (f.h === 0) undoLast(null); else closeEditor(t); }
+        else if (k === 'ok') { begin(); if (f.h === 0) undoLast(); else closeEditor(t); }
       } else if (f.zone === 'home') {
         if (k === 'up') { if (f.i > 0) f.i--; else f.zone = 'head'; }
         else if (k === 'down') { if (f.i < nh - 1) f.i++; }
@@ -821,7 +863,14 @@
       { id: 'typography', label: 'Typography', value: FONTS[S.c.font].name },
       { id: 'focus', label: 'Focus', value: VALUE_NAMES[S.c.focus] + (materialApplies() ? ', ' + VALUE_NAMES[S.c.material] : '') },
       { id: 'editor', label: 'Apps on Home', value: n + (n === 1 ? ' app' : ' apps') },
+      { id: 'widgets', label: 'Clock and widgets', value: widgetSummary() },
       { id: 'samsung', label: 'Samsung', value: 'Home and TV settings' }];
+  }
+  function widgetSummary() {
+    var W = window.CleanFrameWidgets, c, at;
+    if (!W) return '12-hour';
+    c = W.config(); at = W.location();
+    return c.hours + '-hour, ' + at.city + (c.place === 'auto' ? ' (automatic)' : '');
   }
   function settingsIds() { return settingsRows().map(function (r) { return r.id; }); }
   V.settings = {
@@ -841,7 +890,7 @@
     if (id === 'editor') openEditor('settings');
     else openAppearance(id);
   }
-  var DETAIL_NAMES = { background: 'Background', layout: 'Layout', typography: 'Typography', focus: 'Focus', rotation: 'Rotation', samsung: 'Samsung' };
+  var DETAIL_NAMES = { background: 'Background', layout: 'Layout', typography: 'Typography', focus: 'Focus', rotation: 'Rotation', samsung: 'Samsung', widgets: 'Clock and widgets', inputs: 'Inputs' };
   function choice(axis, value, disabled) {
     return { action: axis === 'mode' ? 'rotation.' + value : 'choice.' + axis + '.' + value, axis: axis, value: value, disabled: !!disabled,
       label: axis === 'font' ? FONTS[value].name : axis === 'mode' ? MODES.filter(function (m) { return m.id === value; })[0].name : value === 'both' ? 'Both' : VALUE_NAMES[value] };
@@ -849,6 +898,10 @@
   function detailSections(t) {
     var flat = S.c.bg !== 'photo', inactive = !materialApplies();
     function options(axis, values, disabled) { return values.map(function (value) { return choice(axis, value, disabled); }); }
+    if (t.group === 'inputs') return [{ id: 'inputs', title: '', items: t.inputs.length ? t.inputs.map(function (input) {
+      return { action: 'input.' + input.number, label: input.name, description: input.active ? 'Active' : input.connected ? 'Connected' : 'Disconnected — may be asleep' };
+    }) : [{ action: 'inputs.retry', label: t.loading ? 'Loading inputs…' : 'Try again', disabled: t.loading }],
+      reason: t.inputError || (!t.loading && !t.inputs.length ? 'No HDMI inputs were reported by this TV.' : '') }];
     if (t.group === 'background') return [
       { id: 'bg', title: 'Background type', items: options('bg', ['photo', 'light', 'dark']) },
       { id: 'wall', title: 'Wallpaper', items: [{ action: 'background.wallpaper', label: wall(S.c.wall).name, thumbnail: true, disabled: flat }] },
@@ -857,7 +910,10 @@
     if (t.group === 'layout') return [
       { id: 'layout', title: 'Layout', horizontal: true, items: options('layout', ['list', 'dock']) },
       { id: 'apps', title: 'App display', horizontal: true, items: options('apps', ['text', 'icons', 'both']) },
-      { id: 'controls', title: 'Home controls', horizontal: true, items: options('controls', ['text', 'icons', 'both']) }
+      { id: 'controls', title: 'Home controls', horizontal: true, items: options('controls', ['text', 'icons', 'both']) },
+      { id: 'dockpos', title: 'Dock position', horizontal: true, items: ['standard', 'lower'].map(function (v) {
+        return { action: 'widgets.dock.' + v, label: v === 'lower' ? 'Lower' : 'Standard', radio: true, applied: dockPosition() === v, disabled: S.c.layout !== 'dock' };
+      }), reason: S.c.layout !== 'dock' ? 'Choose the Dock layout to move the dock.' : '' }
     ];
     if (t.group === 'typography') return [{ id: 'font', title: '', items: options('font', LOOK_VALUES.font) }];
     if (t.group === 'focus') return [
@@ -865,15 +921,51 @@
       { id: 'material', title: 'Material', horizontal: true, items: options('material', ['soft', 'frost', 'tint'], inactive),
         reason: inactive ? flat ? 'Materials are available with a Photo background.' : 'Choose Glass focus or the Dock layout to use materials.' : '' }
     ];
+    if (t.group === 'widgets') return widgetSections();
     if (t.group === 'rotation') return [{ id: 'mode', title: '', items: options('mode', MODES.map(function (m) { return m.id; }), flat),
       reason: flat ? 'Choose Photo in Background to use rotation.' : 'Timed changes pause while Settings or another panel is open.' }];
     return [{ id: 'samsung', title: '', items: [
       { action: 'samsung.home', label: 'Samsung Home', description: 'Open Samsung’s Home screen' },
-      { action: 'samsung.settings', label: 'TV settings', description: 'Picture, sound and network settings' }
+      { action: 'samsung.settings', label: 'TV settings', description: 'Picture, sound and network settings' },
+      { action: 'samsung.inputs', label: 'Inputs', description: 'Choose an HDMI input' }
     ] }];
   }
+  /* Widget preferences live in widgets.js storage; radio items show their own applied state. */
+  function widgetSections() {
+    var W = window.CleanFrameWidgets, c, at;
+    if (!W) return [{ id: 'widgets', title: '', items: [{ action: 'settings.back', label: 'Widgets are unavailable' }] }];
+    c = W.config(); at = W.location();
+    var cities = W.places().map(function (p) { return { action: 'widgets.place.' + p.id, label: p.city, radio: true, applied: c.place === p.id }; });
+    return [
+      { id: 'hours', title: 'Time format', horizontal: true, items: [12, 24].map(function (h) { return { action: 'widgets.hours.' + h, label: h + '-hour', radio: true, applied: c.hours === h }; }) },
+      { id: 'place', title: 'Location for weather and prayer times', items: [{ action: 'widgets.place.auto', label: 'Automatic', radio: true, applied: c.place === 'auto',
+        description: at.source === 'auto' ? (at.method === 'device' ? 'Detected: ' : 'From your internet provider: ') + at.city : at.source === 'fallback' ? 'Using ' + at.city + ' until detected' : 'Find from this TV’s network' }] },
+      { id: 'cities', title: 'Or choose a city', horizontal: true, items: cities.slice(0, 4) },
+      { id: 'cities-more', title: '', horizontal: true, items: cities.slice(4) },
+      onOff('weather', 'Weather', c.weather),
+      onOff('prayer', 'Prayer times', c.prayer),
+      onOff('radar', 'Rain radar when rain is nearby', c.radar),
+      onOff('care', 'Screen care: dim and shift Home when idle', c.care)
+    ];
+    function onOff(id, title, on) {
+      return { id: id, title: title, horizontal: true, items: [
+        { action: 'widgets.' + id + '.on', label: 'On', radio: true, applied: on },
+        { action: 'widgets.' + id + '.off', label: 'Off', radio: true, applied: !on }] };
+    }
+  }
+  function widgetValue(k) { var W = window.CleanFrameWidgets; return W ? W.value ? W.value(k) : W.config()[k] : undefined; }
+  function dockPosition() { return widgetValue('dock') === 'lower' ? 'lower' : 'standard'; }
+  function widgetChoice(action) {
+    var parts = action.split('.'), W = window.CleanFrameWidgets;
+    if (!W) return;
+    if (parts[1] === 'hours') W.configure({ hours: Number(parts[2]) });
+    else if (parts[1] === 'place') W.configure({ place: parts[2] });
+    else if (parts[1] === 'radar') W.configure({ radar: parts[2] === 'on' });
+    else if (parts[1] === 'dock') W.configure({ dock: parts[2] });
+    else if (parts[1] === 'weather' || parts[1] === 'prayer' || parts[1] === 'care') { var patch = {}; patch[parts[1]] = parts[2] === 'on'; W.configure(patch); }
+  }
   function detailRows(t) {
-    var rows = [[{ action: 'settings.back', label: t.group === 'rotation' ? 'Background' : 'Settings' }]];
+    var rows = [[{ action: 'settings.back', label: t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'Samsung' : 'Settings' }]];
     detailSections(t).forEach(function (section) {
       var enabled = section.items.filter(function (item) { return !item.disabled; });
       if (section.horizontal && enabled.length) rows.push(enabled);
@@ -901,7 +993,17 @@
     c = next(S.c.home.slice(), S.c.recent.slice()); c.mode = value;
     if (!write(c, 'Wallpaper rotation')) S.lookError = { type: 'save', patch: { mode: value }, row: 'mode', transient: false };
   }
-  function detailBack() { cancelLook(); S.err = null; pop(); }
+  function loadInputs(t) {
+    t.loading = true; t.inputError = null;
+    FrameDevice.sources(function (err, list) {
+      if (top() !== t) return;
+      t.loading = false; t.inputs = list || []; t.inputError = err ? err.message : null; after();
+    });
+  }
+  function openInputs() {
+    openAppearance('inputs'); var t = top(); t.inputs = []; loadInputs(t);
+  }
+  function detailBack() { cancelLook(); S.err = null; pop(); FrameDevice.cancelSource(); }
   function detailOk(t, item) {
     var patch = {}, error = S.lookError;
     if (item.action === 'settings.back') { detailBack(); return; }
@@ -916,6 +1018,15 @@
     else if (item.action === 'background.rotation') openAppearance('rotation');
     else if (item.action === 'samsung.home') perform('Samsung Home', FrameDevice.home);
     else if (item.action === 'samsung.settings') perform('TV settings', FrameDevice.settings);
+    else if (item.action.indexOf('widgets.') === 0) widgetChoice(item.action);
+    else if (item.action === 'samsung.inputs') openInputs();
+    else if (item.action === 'inputs.retry') loadInputs(t);
+    else if (item.action.indexOf('input.') === 0) perform(item.label, function (done) {
+      FrameDevice.setSource(Number(item.action.slice(6)), function (err) {
+        t.refreshInputs = true;
+        done(top() === t && !document.hidden && !(err && err.cancelled) ? err : null);
+      });
+    });
   }
   V.appearance = {
     norm: function (t) {
@@ -923,7 +1034,7 @@
       var axis = { background: 'bg', layout: 'layout', typography: 'font', focus: 'focus', rotation: 'mode' }[t.group];
       rows.forEach(function (items) { items.forEach(function (item) {
         if (item.action === t.f.action) exists = true;
-        if (item.axis === axis && item.value === S.c[axis]) applied = item;
+        if (item.radio ? item.applied && !applied : item.axis === axis && item.value === S.c[axis]) applied = item;
       }); });
       if (!exists) detailFocus(t, applied || (rows[1] || rows[0])[0], 0);
       if (t.f.column === undefined) t.f.column = detailLocation(t).column;
@@ -965,26 +1076,27 @@
   /* ---------- Dispatch ---------- */
   function norm() { var t = top(), v = V[t.id]; if (v.norm) v.norm(t); }
   function press(k) {
+    if (S.source) { if (k === 'back') { exitSource(); after(); scheduleIdle(); } return; }
     norm();
     var t = top();
     V[t.id].key(t, k);
     norm();
     render();
     syncRotation();
+    scheduleIdle();
   }
 
   /* ---------- Rendering ---------- */
   var $ = function (id) { return document.getElementById(id); };
-  var stage = $('stage'), homeEl = $('home'), caption = $('caption'), utilsEl = $('utils');
+  var stage = $('stage'), homeEl = $('home'), caption = $('caption'), utilsEl = $('utils'), radarEl = $('radar');
   var utilFocusLabel = $('utilFocusLabel'), utilFocusKey = '', appFocusName = $('appFocusName');
   var dock = $('dock'), shelf = $('shelf'), track = $('track'), plate = $('plate'), matScrim = $('matScrim'), dockEmpty = $('dockEmpty');
-  var cueL = $('cueL'), cueR = $('cueR'), dockAction = $('dockAction');
+  var cueL = $('cueL'), cueR = $('cueR');
   var focusStatus = $('focusStatus'), sceneEl = $('scene'), appearanceEl = $('appearance'), appearanceRows = $('appearanceRows'), appearanceDesc = $('appearanceDesc');
   var appearanceBack = $('appearanceBack'), appearanceTitle = $('appearanceTitle'), appearanceStatus = $('appearanceStatus');
-  var phScene = $('phScene'), phPlate = $('phPlate'), phField = $('phField'), phList = $('phList'), phRows = $('phRows'), phAction = $('phAction'), phEmpty = $('phEmpty');
+  var phPlate = $('phPlate'), phField = $('phField'), phList = $('phList'), phRows = $('phRows'), phEmpty = $('phEmpty');
   var phPlates = [phPlate, $('phPlateAlt')], phFields = [phField, $('phFieldAlt')], photoPlateIndex = 0, photoPlateKey = null;
   var utPlates = [$('utLens'), $('utLensAlt')], utFields = [$('utField'), $('utFieldAlt')], utPlateIndex = 0, utPlateKey = null;
-  var photoMode = null, photoTransitionToken = 0;
   var sheetEl = $('sheet'), sheetView = $('sheetView');
   var IMG = { photo: $('photo'), mat: $('matImg'), bg: $('sheetBg'), field: $('phFieldImg'), fieldAlt: $('phFieldImgAlt'), utility: $('utFieldImg'), utilityAlt: $('utFieldImgAlt') };
   var sheetKey = '', slotEls = {}, dockEdgeFrame = 0, dockEdgeUntil = 0, dockAnchorCenter = 960;
@@ -1018,7 +1130,7 @@
   function render() {
     var t = top(), sheet = !!V[t.id].sheet, shown = wall(S.shown ? S.shown.wall : S.c.wall), palette = ADAPTIVE_INK[shown.id];
     var adaptive = applyAdaptiveInk(palette), tr = adaptive && palette.tr ? palette.tr.pol : shown.ut.tr, br = adaptive && palette.br ? palette.br.pol : shown.ut.br;
-    stage.className = 'stage bg-' + S.c.bg + ' l-' + S.c.layout + ' v-' + S.variant + ' m-' + (materialApplies() ? S.c.material : 'none') + ' f-' + S.c.focus + ' a-' + S.c.apps + ' u-' + S.c.controls + ' g-' + S.geom + ' tone-' + shown.tone + ' tr-' + tr + ' br-' + br + wallClasses(shown) + inkRungClasses(palette, adaptive) + ' at-' + t.id + ' font-' + homeFont() + (homeFont() !== 'manrope' ? ' font-custom' : '') + (S.fontSwitch ? ' is-font-switch' : '') + (adaptive ? ' has-adaptive-ink adaptive-tl-' + palette.tl.pol : '') + (!adaptive && shown.clockInk ? ' has-clock-ink' : '') + (!adaptive && shown.dockClockInk ? ' has-dock-clock-ink' : '') + (registeredMaterial(shown.id) ? ' registered-material' : '') + (sheet ? ' is-sheet' : '') + (S.reflow ? ' is-reflow' : '');
+    stage.className = 'stage bg-' + S.c.bg + ' l-' + S.c.layout + (dockPosition() === 'lower' ? ' dock-lower' : '') + ' v-' + S.variant + ' m-' + (materialApplies() ? S.c.material : 'none') + ' f-' + S.c.focus + ' a-' + S.c.apps + ' u-' + S.c.controls + ' g-' + S.geom + ' tone-' + shown.tone + ' tr-' + tr + ' br-' + br + wallClasses(shown) + inkRungClasses(palette, adaptive) + ' at-' + t.id + ' font-' + homeFont() + (homeFont() !== 'manrope' ? ' font-custom' : '') + (S.fontSwitch ? ' is-font-switch' : '') + (adaptive ? ' has-adaptive-ink adaptive-tl-' + palette.tl.pol : '') + (!adaptive && shown.clockInk ? ' has-clock-ink' : '') + (!adaptive && shown.dockClockInk ? ' has-dock-clock-ink' : '') + (registeredMaterial(shown.id) ? ' registered-material' : '') + (sheet ? ' is-sheet' : '') + (S.reflow ? ' is-reflow' : '') + idleClasses();
     if (!adaptive && shown.clockInk) stage.style.setProperty('--clock-ink', shown.clockInk);
     else stage.style.removeProperty('--clock-ink');
     if (!adaptive && shown.dockClockInk) stage.style.setProperty('--dock-clock-ink', shown.dockClockInk);
@@ -1035,12 +1147,12 @@
     if (appliedFont === id && appliedFontMetrics === metrics) return;
     appliedFont = id; appliedFontMetrics = metrics;
     var values = { 'display-family': '"' + f.family + '"', 'ui-family': '"' + ui.family + '"', 'primary-family': '"' + primary.family + '"', 'display-weight': f.display, 'ui-weight': ui.weight, 'primary-weight': primary.weight, 'clock-weight': f.clock,
-      'clock-shift': px(fontShift('clock', 48)), 'utility-shift': px(fontShift('ui', 28)), 'action-shift': px(fontShift('ui', 30)), 'heading-shift': px(fontShift('ui', 48)), 'full-name-shift': px(fontShift('primary', 30)), 'clock-digit': px(metrics ? metrics.digitCell : 0) };
+      'clock-shift': px(fontShift('clock', 48)), 'utility-shift': px(fontShift('ui', 28)), 'full-name-shift': px(fontShift('primary', 30)), 'clock-digit': px(metrics ? metrics.digitCell : 0) };
     Object.keys(values).forEach(function (key) { homeEl.style.setProperty('--font-' + key, String(values[key])); });
   }
 
   function homeState(t) {
-    var h = S.c.home, hs = { mode: 'browse', zone: null, i: Math.max(0, ensureSel()), u: -1, lifted: false, from: -1, arr: null, items: h.map(function (id) { return { key: id, kind: 'app', id: id }; }) };
+    var h = S.c.home, hs = { mode: 'browse', zone: null, i: Math.max(0, ensureSel()), u: -1, lifted: false, from: -1, items: h.map(function (id) { return { key: id, kind: 'app', id: id }; }) };
     if (isSettingsDetail(t)) hs.zone = 'preview';
     else if (t.id === 'home') { hs.zone = t.f.zone; hs.u = t.f.u; }
     return hs;
@@ -1051,30 +1163,73 @@
     renderCaption(t, hs);
     renderUtils(hs);
     if (S.c.layout === 'list') renderList(hs);
-    else { photoMode = null; renderDock(hs); }
+    else renderDock(hs);
     renderAppFocusName(hs);
   }
 
-  function clockText() {
-    var d = new Date(), h = d.getHours() % 12 || 12, m = d.getMinutes();
-    return h + ':' + (m < 10 ? '0' : '') + m;
+  function clockParts(d) {
+    var W = window.CleanFrameWidgets;
+    if (W && W.clockParts) return W.clockParts(d);
+    var h = d.getHours(), m = d.getMinutes();
+    return { time: (h % 12 || 12) + ':' + (m < 10 ? '0' : '') + m, meridiem: h < 12 ? 'AM' : 'PM' };
   }
   function clockHtml() {
-    var text = clockText(), metrics = fontMetrics[homeFont()];
-    if (!metrics || !metrics.digitCell) return text;
-    return text.replace(/[0-9]/g, function (digit) { return '<span class="clock-digit">' + digit + '</span>'; });
+    var p = clockParts(new Date()), metrics = fontMetrics[homeFont()], html = p.time;
+    if (metrics && metrics.digitCell) html = html.replace(/[0-9]/g, function (digit) { return '<span class="clock-digit">' + digit + '</span>'; });
+    return html + (p.meridiem ? ' <span class="clock-meridiem">' + p.meridiem + '</span>' : '');
   }
   function renderCaption(t, hs) {
-    var html = '<span class="clock">' + clockHtml() + '</span>';
-    if (S.c.apps !== 'icons' && hs.items[hs.i] && (S.c.layout === 'list' ? photoLabel(hs.items[hs.i].id, false).size < 88 || photoLabel(hs.items[hs.i].id, false).ellipsis : hs.zone === 'apps' && reducedDockLabel(hs.items[hs.i].id))) html += '<span class="cap-line full-name">' + esc(app(hs.items[hs.i].id).name) + '</span>';
+    var html = '<span class="clock">' + clockHtml() + '</span>', W = window.CleanFrameWidgets, st = null;
+    if (W) try { st = W.state(); } catch (e) { st = null; }
+    // Widgets sit directly under the clock; a long focused name follows them so it never covers the weather or prayers.
+    html += widgetsHtml(st);
+    if (S.c.apps !== 'icons' && hs.items[hs.i] && (S.c.layout === 'list' ? photoLabel(hs.items[hs.i].id).size < 88 || photoLabel(hs.items[hs.i].id).ellipsis : hs.zone === 'apps' && reducedDockLabel(hs.items[hs.i].id))) html += '<span class="cap-line full-name">' + esc(app(hs.items[hs.i].id).name) + '</span>';
     setHTML(caption, html);
+    renderRadar(st && st.radar);
+  }
+
+  /* Rain radar panel: shown only while rain is nearby; tiles are positioned once per frame and never animated. */
+  var shownRadar;
+  function renderRadar(r) {
+    // widgets.js returns the same object until the radar changes, so key presses skip rebuilding it.
+    if (r === shownRadar) return;
+    shownRadar = r;
+    if (!r) { radarEl.className = 'radar'; setHTML(radarEl, ''); return; }
+    radarEl.className = 'radar is-on';
+    setHTML(radarEl, '<div class="radar-head"><span class="radar-title">' + (r.snow ? 'Snow nearby' : 'Rain nearby') + '</span><span class="radar-time">Radar ' + esc(r.time) + '</span></div>'
+      + '<div class="radar-map" style="width:' + r.width + 'px;height:' + r.height + 'px">'
+      + r.tiles.map(function (t) { return '<img class="radar-base" alt="" src="' + esc(t.base) + '" style="left:' + t.left + 'px;top:' + t.top + 'px">'; }).join('')
+      + r.tiles.map(function (t) { return '<img class="radar-rain" alt="" src="' + esc(t.rain) + '" style="left:' + t.left + 'px;top:' + t.top + 'px">'; }).join('')
+      + '<span class="radar-dot"></span><span class="radar-city">' + esc(r.city) + '</span></div>'
+      + '<div class="radar-credit">Radar: RainViewer · Map: Esri</div>');
+  }
+
+  /* Display-only widgets under the clock; they never take remote focus. */
+  function widgetsHtml(st) {
+    var html = '', w, p;
+    if (!st) return '';
+    w = st.weather; p = st.prayer;
+    if (w) html += '<span class="cap-widget w-weather' + (w.stale ? ' is-stale' : '') + '"><span class="w-temp">' + esc(w.temp) + '°</span>'
+      + (w.text ? '<span class="w-text">' + esc(w.text) + '</span>' : '')
+      + (w.hi !== null && w.lo !== null ? '<span class="w-range">' + esc(w.hi) + '° / ' + esc(w.lo) + '°</span>' : '')
+      + '<span class="w-city">' + esc(w.city) + '</span></span>';
+    if (p) {
+      html += '<span class="cap-widget w-prayers">';
+      p.list.forEach(function (item) {
+        var next = p.next && !p.next.tomorrow && p.next.id === item.id;
+        html += '<span class="w-prayer' + (next ? ' is-next' : '') + '"><span class="w-name">' + esc(item.name) + '</span><span class="w-time">' + esc(item.time) + '</span></span>';
+      });
+      html += '</span>';
+      if (p.next) html += '<span class="cap-widget w-next">' + esc(p.next.name) + (p.next.tomorrow ? ' tomorrow at ' + esc(p.next.time) : ' in ' + esc(p.next.until)) + '</span>';
+    }
+    return html ? '<span class="cap-widgets">' + html + '</span>' : '';
   }
 
   function utilBtn(z, i, action, inner, extra, name) {
     return '<button type="button" tabindex="-1" class="u' + (extra || '') + '" data-z="' + z + '" data-i="' + i + '" data-action="' + action + '" aria-label="' + esc(name) + '"><span class="u-content">' + inner + '</span></button>';
   }
   function renderUtils(hs) {
-    var html = '', style = hs.mode === 'arrange' && S.c.controls !== 'text' ? 'both' : S.c.controls;
+    var html = '', style = S.c.controls;
     var iconsOnly = style === 'icons', U = utils(), focused = null;
     utilsEl.className = 'utils quiet-utils is-' + style + (hs.zone === 'util' || hs.zone === 'ctl' ? ' is-awake' : '');
     U.forEach(function (u, i) { html += utilBtn('util', i, 'util.' + u, icon(UTIL[u][1], '', true) + '<span class="u-label">' + UTIL[u][0] + '</span>', '', UTIL[u][0]); });
@@ -1144,7 +1299,7 @@
       x = 280; placement = phFields[photoPlateIndex]._placement;
       y = placement.y + placement.height / 2 - 24;
     } else {
-      x = clamp(dockAnchorCenter - width / 2, 140, 1780 - width); y = 932;
+      x = clamp(dockAnchorCenter - width / 2, 140, 1780 - width); y = 932 + (dockPosition() === 'lower' ? DOCK_LOWER : 0);
     }
     appFocusName.style.left = x + 'px'; appFocusName.style.top = (y + fontShift('primary', S.c.layout === 'list' ? 40 : 36)) + 'px';
     appFocusName.className = 'app-focus-name is-on';
@@ -1175,10 +1330,8 @@
     if (!S.reflow) { scroll.first = first; scroll.off = first; }
     return first * g.pitch;
   }
-  function dockTileHtml(it, full) {
-    var a, body;
-    if (it.kind === 'add') return '<span class="add">' + icon('plus') + '</span><span class="label">' + (full ? 'Home is full' : 'Add app') + '</span>';
-    a = app(it.id);
+  function dockTileHtml(it) {
+    var a = app(it.id), body;
     body = S.c.apps === 'text' ? '' : appMark(a, S.c.apps === 'icons' ? 136 : 120, S.c.apps === 'icons' ? 88 : 72, S.c.apps === 'icons' ? 72 : 58);
     return body + (S.c.apps === 'icons' ? '' : '<span class="label" style="font-size:' + dockLabelSize(a.id) + 'px;top:' + ((S.c.apps === 'text' ? 28 : 128) + fontShift('primary', dockLabelSize(a.id))) + 'px"><span class="label-ink">' + esc(a.name) + '</span></span>') + '<span class="nudge nudge-l">' + icon('left') + '</span><span class="nudge nudge-r">' + icon('right') + '</span>';
   }
@@ -1202,11 +1355,10 @@
   }
 
   function renderDock(hs) {
-    var items = hs.items, n = items.length, empty = hs.mode !== 'arrange' && !n, g = dockGeom(empty ? -1 : n);
+    var items = hs.items, n = items.length, empty = !n, g = dockGeom(empty ? -1 : n);
     var anchor = clamp(hs.i, 0, Math.max(0, n - 1)), off = empty ? 0 : dockOffset(n, anchor, g);
-    var full = hs.arr ? live(hs.arr.slots).length >= CAP : false, ns = hs.arr ? hs.arr.slots.length : n;
+    var ns = n;
     var tileFocus = hs.zone === 'apps' || hs.zone === 'tiles', tileSel = hs.zone === 'util' || hs.zone === 'act' || hs.zone === 'ctl' || hs.zone === 'preview';
-    var focusItem = items[anchor], s, ax, label, width;
 
     dock.className = 'dock' + (empty ? ' is-empty' : '');
     dock.style.left = g.x + 'px'; dock.style.top = g.y + 'px'; dock.style.width = g.w + 'px'; dock.style.height = g.h + 'px';
@@ -1223,15 +1375,14 @@
     keyed(track, empty ? [] : items, function (el, it, i) {
       var a = it.id ? app(it.id) : null, left = i * g.pitch, focus = tileFocus && i === anchor, sel = tileSel && i === anchor;
       var lifted = hs.lifted && i === anchor, partial = g.broad && (left - off < -1 || left + g.tw - off > g.shelf + 1);
-      setContent(el, it.kind + '|' + (it.id || '') + '|' + (it.id ? dockLabelSize(it.id) : full) + '|' + S.c.bg + '|' + S.c.apps + '|' + homeFont(), '<span class="tile-content">' + dockTileHtml(it, full) + '</span>');
+      setContent(el, it.kind + '|' + (it.id || '') + '|' + (it.id ? dockLabelSize(it.id) : false) + '|' + S.c.bg + '|' + S.c.apps + '|' + homeFont(), function () { return '<span class="tile-content">' + dockTileHtml(it) + '</span>'; });
       el.className = 'tile k-' + it.kind + (focus ? ' is-focus' : '') + (sel ? ' is-sel' : '') + (lifted ? ' is-lifted' : '') + (partial ? ' is-partial' : '')
-        + (a && !a.mark ? ' is-text' : '') + (it.kind === 'add' && full ? ' is-full' : '') + (it.kind === 'app' && S.press === it.id ? ' is-press' : '')
+        + (a && !a.mark ? ' is-text' : '') + (it.kind === 'app' && S.press === it.id ? ' is-press' : '')
         + (lifted && i === 0 ? ' no-l' : '') + (lifted && i >= ns - 1 ? ' no-r' : '');
       el.style.transform = 'translate3d(' + left + 'px,0,0)';
       el.setAttribute('role', 'button');
       if (a) el.setAttribute('aria-label', a.name);
-      if (hs.mode === 'arrange') attrs(el, 'tile', i, 'arrange.' + (it.kind === 'add' ? 'add' : (it.kind === 'ph' ? 'placeholder.' : 'tile.') + it.id));
-      else attrs(el, 'app', i, 'home.app.' + it.id);
+      attrs(el, 'app', i, 'home.app.' + it.id);
     });
     track.style.transform = 'translate3d(' + (-off) + 'px,0,0)';
     syncDockEdges();
@@ -1247,40 +1398,9 @@
     cueL.className = 'cue' + (!g.broad && !empty && scroll.first > 0 ? ' is-on' : '');
     cueR.className = 'cue' + (!g.broad && !empty && scroll.first + g.vis < n ? ' is-on' : '');
 
-    ax = g.x + 16 + anchor * g.pitch - off;
-    if (hs.mode === 'arrange' && !hs.lifted && (hs.zone === 'tiles' || hs.zone === 'act') && focusItem && focusItem.kind !== 'add') {
-      s = hs.arr.slots[anchor];
-      label = (s.removed ? 'Restore ' : 'Remove ') + app(s.id).name; width = actionWidth(label);
-      ax = clamp(ax + (g.tw - width) / 2, 112, 1808 - width);
-      setHTML(dockAction, '<span>' + esc(label) + '</span>');
-      dockAction.className = 'dock-action is-on' + (hs.zone === 'act' ? ' is-focus' : '');
-      dockAction.style.width = width + 'px';
-      dockAction.style.transform = 'translate3d(' + ax + 'px,0,0)';
-      attrs(dockAction, 'act', anchor, 'arrange.' + (s.removed ? 'restore.' : 'remove.') + s.id);
-    } else {
-      dockAction.className = 'dock-action';
-      dockAction.removeAttribute('data-z'); dockAction.removeAttribute('data-action');
-    }
     setHTML(dockEmpty, empty ? '<p>No apps on Home</p><button type="button" tabindex="-1" class="btn' + (hs.zone === 'empty' ? ' is-focus' : '') + '" data-z="empty" data-i="0" data-action="home.add-apps">' + icon('plus') + '<span>Add apps</span></button>' : '');
   }
 
-  function photoModeTransition(compact) {
-    if (photoMode !== null && photoMode !== compact) {
-      var ghost = phScene.cloneNode(true), token = ++photoTransitionToken;
-      ghost.removeAttribute('id'); ghost.setAttribute('aria-hidden', 'true');
-      Array.prototype.forEach.call(ghost.querySelectorAll('[id],[data-action],[data-z]'), function (el) {
-        el.removeAttribute('id'); el.removeAttribute('data-action'); el.removeAttribute('data-z');
-      });
-      ghost.className = 'ph-scene ph-ghost';
-      phScene.parentNode.appendChild(ghost);
-      phScene.className = 'ph-scene ph-incoming';
-      setTimeout(function () {
-        if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
-        if (token === photoTransitionToken) phScene.className = 'ph-scene';
-      }, 180);
-    }
-    photoMode = compact;
-  }
   /* Each plate keeps a stationary, stage-registered field while its opacity changes.
      Reuse the hidden group for the next label; never animate plate width or position. */
   function renderPhotoPlate(id, width, height, y, state) {
@@ -1305,29 +1425,24 @@
     el.style.transform = 'translate3d(' + (-x) + 'px,' + (-y) + 'px,0)' + (S.c.bg === 'photo' && S.c.material === 'tint' && !REDUCED_MOTION ? ' scale(1.04)' : '');
   }
   function renderList(hs) {
-    var items = hs.items, n = items.length, compact = hs.mode === 'arrange', pitch = compact ? PH_COMPACT_PITCH : PH_PITCH;
-    var anchor = clamp(hs.i, 0, Math.max(0, n - 1)), first, off, width, slot, y, s, label, aw, plateState;
+    var items = hs.items, n = items.length, pitch = PH_PITCH;
+    var anchor = clamp(hs.i, 0, Math.max(0, n - 1)), first, off, width, slot, y, plateState;
     var rowFocus = hs.zone === 'apps' || hs.zone === 'tiles', remembered = hs.zone === 'util' || hs.zone === 'act' || hs.zone === 'ctl' || hs.zone === 'preview';
-    photoModeTransition(compact);
-    if (compact) {
-      first = clamp(scroll.photoArrange, anchor - 7, anchor - 1);
-      first = clamp(first, 0, Math.max(0, n - PH_COMPACT_VISIBLE));
-      scroll.photoArrange = first;
-    } else {
-      first = clamp(scroll.photo, anchor - 3, anchor - 1);
-      first = clamp(first, 0, Math.max(0, n - PH_FULL));
-      scroll.photo = first;
-    }
+    first = clamp(scroll.photo, anchor - 3, anchor - 1);
+    first = clamp(first, 0, Math.max(0, n - PH_FULL));
+    scroll.photo = first;
     off = first * pitch; slot = anchor - first;
-    width = items[anchor] ? listPlateWidth(items[anchor].id, compact) : 360;
-    phList.className = 'ph-list' + (compact ? ' is-compact' : '');
+    width = items[anchor] ? listPlateWidth(items[anchor].id) : 360;
+    phList.className = 'ph-list';
     phList.style.height = PH_HEIGHT + 'px';
-    phRows.style.top = (compact ? 72 : 148) + 'px';
+    phRows.style.top = '148px';
     keyed(phRows, items, function (row, it, i) {
-      var typography = photoLabel(it.id, compact), focus = rowFocus && i === anchor, lifted = hs.lifted && i === anchor, markImage, body = '';
-      if (S.c.apps !== 'text') body += appMark(app(it.id), S.c.apps === 'icons' ? compact ? 64 : 88 : compact ? 60 : 84, S.c.apps === 'icons' ? compact ? 64 : 88 : compact ? 44 : 64, S.c.apps === 'icons' ? compact ? 52 : 72 : compact ? 42 : 54);
-      if (S.c.apps !== 'icons') body += '<span class="ph-name" style="font-size:' + typography.size + 'px;top:' + typography.top + 'px">' + esc(app(it.id).name) + '</span>';
-      setContent(row, it.id + '|' + typography.size + '|' + S.c.bg + '|' + S.c.apps + '|' + homeFont(), '<span class="ph-group">' + body + '</span><span class="ph-move ph-move-up">' + icon('up') + '</span><span class="ph-move ph-move-down">' + icon('down') + '</span>');
+      var typography = photoLabel(it.id), focus = rowFocus && i === anchor, lifted = hs.lifted && i === anchor, markImage, body = '';
+      setContent(row, it.id + '|' + typography.size + '|' + S.c.bg + '|' + S.c.apps + '|' + homeFont(), function () {
+        if (S.c.apps !== 'text') body += appMark(app(it.id), S.c.apps === 'icons' ? 88 : 84, S.c.apps === 'icons' ? 88 : 64, S.c.apps === 'icons' ? 72 : 54);
+        if (S.c.apps !== 'icons') body += '<span class="ph-name" style="font-size:' + typography.size + 'px;top:' + typography.top + 'px">' + esc(app(it.id).name) + '</span>';
+        return '<span class="ph-group">' + body + '</span><span class="ph-move ph-move-up">' + icon('up') + '</span><span class="ph-move ph-move-down">' + icon('down') + '</span>';
+      });
       markImage = row.querySelector('.mark img');
       if (markImage) {
         markImage.onerror = function () { this.style.visibility = 'hidden'; };
@@ -1336,31 +1451,23 @@
       row.className = 'ph-row k-' + it.kind + (focus ? ' is-focus' : '') + (remembered && i === anchor ? ' is-sel' : '') + (lifted ? ' is-lifted' : '')
         + (lifted && i === 0 ? ' no-up' : '') + (lifted && i === n - 1 ? ' no-down' : '')
         + (it.kind === 'app' && S.press === it.id ? ' is-press' : '');
-      row.style.width = (compact ? listPlateWidth(it.id, compact) : 1200) + 'px'; row.style.height = pitch + 'px';
+      row.style.width = '1200px'; row.style.height = pitch + 'px';
       row.style.transform = 'translate3d(0,' + (i * pitch) + 'px,0)';
       row.setAttribute('role', 'button'); row.setAttribute('aria-label', app(it.id).name);
-      attrs(row, compact ? 'tile' : 'app', i, compact ? 'arrange.' + (it.kind === 'ph' ? 'placeholder.' : 'tile.') + it.id : 'home.app.' + it.id);
+      attrs(row, 'app', i, 'home.app.' + it.id);
     });
     phRows.style.transform = 'translate3d(0,' + (-off) + 'px,0)';
-    y = (compact ? PH_COMPACT_TOP + 2 : PH_TOP + 1) + slot * pitch;
+    y = (PH_TOP + 1) + slot * pitch;
     plateState = !n || hs.zone === null ? '' : hs.lifted ? 'on-lift' : S.c.focus === 'glass' && rowFocus ? 'on-focus' : S.c.focus === 'glass' && remembered ? 'on-sel' : '';
-    renderPhotoPlate(items[anchor] ? items[anchor].id : '', width, compact ? 88 : 134, y, plateState);
-    if (compact && !hs.lifted && (hs.zone === 'tiles' || hs.zone === 'act') && items[anchor]) {
-      s = hs.arr.slots[anchor]; label = (s.removed ? 'Restore ' : 'Remove ') + app(s.id).name; aw = actionWidth(label);
-      setHTML(phAction, '<span>' + esc(label) + '</span>');
-      phAction.className = 'ph-action is-on' + (hs.zone === 'act' ? ' is-focus' : '');
-      phAction.style.width = aw + 'px';
-      phAction.style.transform = 'translate3d(' + (112 + width + 24) + 'px,' + (PH_COMPACT_TOP + slot * pitch + 12) + 'px,0)';
-      attrs(phAction, 'act', anchor, 'arrange.' + (s.removed ? 'restore.' : 'remove.') + s.id);
-    } else { phAction.className = 'ph-action'; phAction.removeAttribute('data-z'); phAction.removeAttribute('data-action'); }
-    phEmpty.className = 'ph-empty' + (!compact && !n ? ' is-on' : '');
-    setHTML(phEmpty, !compact && !n ? '<p>No apps on Home</p><button type="button" tabindex="-1" class="btn' + (hs.zone === 'empty' ? ' is-focus' : '') + '" data-z="empty" data-i="0" data-action="home.add-apps">' + icon('plus') + '<span>Add apps</span></button>' : '');
+    renderPhotoPlate(items[anchor] ? items[anchor].id : '', width, 134, y, plateState);
+    phEmpty.className = 'ph-empty' + (!n ? ' is-on' : '');
+    setHTML(phEmpty, !n ? '<p>No apps on Home</p><button type="button" tabindex="-1" class="btn' + (hs.zone === 'empty' ? ' is-focus' : '') + '" data-z="empty" data-i="0" data-action="home.add-apps">' + icon('plus') + '<span>Add apps</span></button>' : '');
   }
 
   /* Sheets: a frame is built once per view/mode; fill() updates its slots. Persistent
      scrollers let transforms animate. */
   function renderSheet(t, sheet) {
-    var v = V[t.id], key;
+    var key;
     sheetEl.hidden = !(sheet || isSettingsDetail(t));
     sheetView.hidden = !sheet;
     if (sheet) sheetView.setAttribute('aria-modal', 'true');
@@ -1386,18 +1493,18 @@
     appearanceTitle.textContent = DETAIL_NAMES[t.group];
     var at = detailLocation(t), selected = at.item, error = S.lookError, status = '', hint;
     function command(item, inner, cls) {
-      var applied = item.axis && S.c[item.axis] === item.value;
+      var applied = item.radio ? !!item.applied : item.axis && S.c[item.axis] === item.value, radio = item.axis || item.radio;
       var loading = !!(item.axis && S.pending && S.pending.target[item.axis] === item.value && S.pending.row === item.axis);
       return '<button type="button" tabindex="-1" class="setting-choice' + (cls ? ' ' + cls : '') + (t.f.action === item.action ? ' is-focus' : '') + (item.disabled ? ' is-disabled' : '') + (applied ? ' is-applied' : '') + (loading ? ' is-loading' : '') + '"'
-        + (item.axis ? ' role="radio" aria-checked="' + !!applied + '"' : '') + ' aria-label="' + esc(item.axis && item.value === 'both' ? 'Icons and text' : item.label) + '" aria-disabled="' + !!item.disabled + '" aria-busy="' + loading + '"'
+        + (radio ? ' role="radio" aria-checked="' + !!applied + '"' : '') + ' aria-label="' + esc(item.axis && item.value === 'both' ? 'Icons and text' : item.label) + '" aria-disabled="' + !!item.disabled + '" aria-busy="' + loading + '"'
         + ' data-z="detail" data-i="0" data-id="' + item.action + '" data-action="' + item.action + '">' + inner
-        + (item.axis ? '<span class="setting-tick" aria-hidden="true">' + (applied ? icon('check') : '') + '</span>' : '') + '</button>';
+        + (radio ? '<span class="setting-tick" aria-hidden="true">' + (applied ? icon('check') : '') + '</span>' : '') + '</button>';
     }
-    setHTML(appearanceBack, command({ action: 'settings.back', label: t.group === 'rotation' ? 'Background' : 'Settings' }, icon('left') + '<span>' + (t.group === 'rotation' ? 'Background' : 'Settings') + '</span>', 'setting-back'));
+    setHTML(appearanceBack, command({ action: 'settings.back', label: t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'Samsung' : 'Settings' }, icon('left') + '<span>' + (t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'Samsung' : 'Settings') + '</span>', 'setting-back'));
     setHTML(appearanceRows, detailSections(t).map(function (section) {
       return '<section class="setting-section' + (section.horizontal ? ' is-horizontal' : '') + ' section-' + section.id + '">'
         + (section.title ? '<h3 class="setting-label" id="setting-' + section.id + '">' + section.title + '</h3>' : '')
-        + '<div class="setting-options"' + (section.items[0].axis ? ' role="radiogroup" aria-label="' + esc(section.title || LOOK_NAMES[section.id] || DETAIL_NAMES[t.group]) + '"' : '') + '>'
+        + '<div class="setting-options"' + (section.items[0].axis || section.items[0].radio ? ' role="radiogroup" aria-label="' + esc(section.title || LOOK_NAMES[section.id] || DETAIL_NAMES[t.group]) + '"' : '') + '>'
         + section.items.map(function (item) {
           var swatch = item.axis === 'bg', body = '';
           if (swatch || item.thumbnail) body += item.value === 'light' || item.value === 'dark'
@@ -1405,7 +1512,7 @@
             : '<img class="setting-swatch" src="' + WP + S.c.wall + '-thumb.jpg" alt="">';
           body += '<span class="setting-copy"><span class="setting-name">' + esc(item.label) + '</span>'
             + (item.description ? '<span class="setting-description">' + esc(item.description) + '</span>' : '') + '</span>';
-          if (!item.axis) body += icon('right', 'setting-forward');
+          if (!item.axis && !item.radio) body += icon('right', 'setting-forward');
           return command(item, body, item.description ? 'has-description' : '');
         }).join('') + '</div>'
         + (section.reason ? '<p class="setting-reason">' + esc(section.reason) + '</p>' : '') + '</section>';
@@ -1416,7 +1523,7 @@
         + command({ action: 'settings.retry', label: 'Try again' }, '<span>Try again</span>', 'setting-retry');
     }
     setHTML(appearanceStatus, status);
-    hint = selected.disabled ? '' : selected.action === 'settings.back' ? 'Return to ' + (t.group === 'rotation' ? 'Background' : 'Settings') : selected.action === 'settings.retry' ? 'Retry this change' : selected.axis ? 'Apply selected setting' : selected.action === 'background.wallpaper' ? 'Choose a wallpaper' : selected.action === 'background.rotation' ? 'Choose a rotation interval' : 'Open on the TV';
+    hint = selected.disabled ? '' : selected.action === 'settings.back' ? 'Return to ' + (t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'Samsung' : 'Settings') : selected.action === 'settings.retry' ? 'Retry this change' : selected.axis || selected.radio ? 'Apply selected setting' : selected.action === 'background.wallpaper' ? 'Choose a wallpaper' : selected.action === 'background.rotation' ? 'Choose a rotation interval' : 'Open on the TV';
     setHTML(appearanceDesc, hint ? '<span class="remote-key">OK</span><span>' + esc(hint) + '</span>' : '');
   }
   function renderWallpaper(t) {
@@ -1429,7 +1536,7 @@
     var rows = appearanceRows.querySelector('.wallpaper-rows'), shown = wall(S.wallShown) || wall(S.c.wall), candidate = WALLS[t.i], status, note, hint;
     keyed(rows, WALLS.map(function (w) { return { key: w.id, wall: w }; }), function (row, item, i) {
       var visible = i >= t.top && i < t.top + WALL_VISIBLE, w = item.wall, image;
-      setContent(row, w.id + '|' + visible, '<span class="wallpaper-thumb">' + (visible ? '<img src="' + WP + w.id + '-thumb.jpg" alt="">' : '') + '</span><span class="setting-copy"><span class="setting-name">' + esc(w.name) + '</span></span><span class="setting-tick" aria-hidden="true"></span>');
+      setContent(row, w.id + '|' + visible, function () { return '<span class="wallpaper-thumb">' + (visible ? '<img src="' + WP + w.id + '-thumb.jpg" alt="">' : '') + '</span><span class="setting-copy"><span class="setting-name">' + esc(w.name) + '</span></span><span class="setting-tick" aria-hidden="true"></span>'; });
       row.className = 'setting-choice wallpaper-choice' + (t.f.zone === 'photo' && t.i === i ? ' is-focus' : '') + (w.id === S.c.wall ? ' is-applied' : '');
       row.style.transform = 'translate3d(0,' + (i * WALL_ROW) + 'px,0)'; row.style.visibility = visible ? 'visible' : 'hidden';
       row.setAttribute('role', 'radio'); row.setAttribute('tabindex', '-1'); row.setAttribute('aria-label', w.name);
@@ -1463,30 +1570,22 @@
     var root = isSettingsDetail(top()) ? appearanceEl : sheetEl.hidden ? homeEl : sheetEl, active = root.querySelectorAll('.is-focus[data-action]'), target = null, text = S.err ? 'Not saved. OK tries again.' : '', i, r, sr, scale, x, y, w, action, solid, photoRow = false, photoFree = false;
     Array.prototype.forEach.call(stage.querySelectorAll('.has-local-status'), function (el) { el.className = el.className.replace(/\s+has-local-status/g, ''); });
     for (i = 0; i < active.length; i++) if (renderedAction(active[i])) { target = active[i]; break; }
-    if (!text && t.id === 'arrange' && (t.f.zone === 'act' || t.f.zone === 'tiles')) {
-      var slot = t.slots[t.f.i];
-      if (slot && !slot.removed && t.f.zone === 'act' && S.c.home.length === 1) text = LAST;
-    }
-    if (!text && S.note === LAST && t.id === 'arrange') text = LAST;
     if (!target || !text) { focusStatus.className = 'focus-status'; return; }
     if (target.parentNode === utilsEl && utilsEl.className.indexOf('is-icons') >= 0) { renderUtilFocusLabel(target); focusStatus.className = 'focus-status'; return; }
-    // Photo action pills stay on one line; the header already carries this status.
-    if (S.c.layout === 'list' && t.id === 'arrange' && !t.lifted && (t.f.zone === 'act' || t.f.zone === 'tiles')) { focusStatus.className = 'focus-status'; return; }
+    // A List photo row has no action pill; its save-status line floats beside the plate.
     photoRow = S.c.layout === 'list' && target.className.indexOf('ph-row') >= 0;
-    if (photoRow && phAction.className.indexOf('is-on') >= 0) target = phAction;
-    else if (photoRow) photoFree = true;
+    if (photoRow) photoFree = true;
     target.className += ' has-local-status';
     action = target.getAttribute('data-action');
     r = target.getBoundingClientRect(); sr = stage.getBoundingClientRect(); scale = sr.width / 1920 || 1;
     x = (r.left - sr.left) / scale; y = (r.top - sr.top) / scale; w = r.width / scale;
     if (photoFree) { x = 112 + parseFloat(phPlates[photoPlateIndex].style.width) + 24; y += (r.height / scale - 28) / 2; w = 400; }
-    else if (action.indexOf('home.app.') === 0 || action.indexOf('arrange.tile.') === 0 || action.indexOf('arrange.placeholder.') === 0) y += 171;
+    else if (action.indexOf('home.app.') === 0) y += 171;
     else if (action.indexOf('apps.order.') === 0) y += 86;
     else if (action.indexOf('apps.toggle.') === 0 || action.indexOf('apps.add.') === 0) y += 164;
     else if (action.indexOf('layout.') === 0) y += 54;
-    else y += action.indexOf('arrange.remove.') === 0 || action.indexOf('arrange.restore.') === 0 ? 43 : 40;
-    solid = /(?:^|\s)(?:u|btn|er-rm|dock-action|set-row|ph-action)(?:\s|$)/.test(target.className) && target.parentNode !== utilsEl && target.parentNode.className.indexOf('s-head') < 0;
-    if (target === phAction && target.className.indexOf('is-focus') < 0) solid = false;
+    else y += 40;
+    solid = /(?:^|\s)(?:u|btn|er-rm)(?:\s|$)/.test(target.className) && target.parentNode !== utilsEl && target.parentNode.className.indexOf('s-head') < 0;
     focusStatus.className = 'focus-status is-on' + (solid ? ' dark-ink' : '') + (photoFree ? ' photo-status' : '');
     focusStatus.textContent = text;
     focusStatus.style.left = clamp(x + 8, 112, 1808 - Math.min(w - 16, 800)) + 'px';
@@ -1531,14 +1630,14 @@
       t.top = clamp(t.top, 0, Math.max(0, rows - vis));
       keyed(el.grid, items.map(function (id) { return { key: id, id: id }; }), function (tile, it, i) {
         var focus = f.zone === 'grid' && i === f.i;
-        setContent(tile, [it.id, app(it.id).name, onHome(it.id)].join('|'), gridTileHtml(it.id));
+        setContent(tile, [it.id, app(it.id).name, onHome(it.id)].join('|'), function () { return gridTileHtml(it.id); });
         tile.className = 'gt' + (focus ? ' is-focus' : '');
         tile.style.transform = 'translate3d(' + ((i % COLS) * GRID_COL) + 'px,' + (Math.floor(i / COLS) * GRID_ROW) + 'px,0)';
         tile.setAttribute('role', 'button'); tile.setAttribute('aria-label', app(it.id).name);
         attrs(tile, 'grid', i, 'apps.open.' + it.id);
       });
       el.grid.style.transform = 'translate3d(0,' + (-t.top * GRID_ROW) + 'px,0)';
-      el.view.className = 'grid-view' + (t.top > 0 ? ' more-before' : '') + (rows - t.top > vis ? ' more-after' : '');
+      el.view.className = 'grid-view';
       el.before.className = 'row-cue grid-before' + (t.top > 0 ? ' is-on' : '');
       el.after.className = 'row-cue grid-after' + (rows - t.top > vis ? ' is-on' : '');
     },
@@ -1555,7 +1654,7 @@
 
       keyed(el.home, H.map(function (id) { return { key: id, id: id }; }), function (row, it, i) {
         var a = app(it.id), here = f.zone === 'home' && i === f.i, lifted = !!t.lifted && i === f.i;
-        setContent(row, it.id, '<div class="er-name" role="button"><span class="panel-content"><span class="er-num"></span>' + smallMark(a) + '<span class="er-text">' + esc(a.name) + '</span><span class="er-move">' + icon('updown') + '</span></span></div><div class="er-rm" role="button"><span></span></div>');
+        setContent(row, it.id, function () { return '<div class="er-name" role="button"><span class="panel-content"><span class="er-num"></span>' + smallMark(a) + '<span class="er-text">' + esc(a.name) + '</span><span class="er-move">' + icon('updown') + '</span></span></div><div class="er-rm" role="button"><span></span></div>'; });
         row.className = 'er' + (here ? ' is-active' : '') + (lifted ? ' is-lifted' : '');
         row.style.transform = 'translate3d(' + (lifted ? 16 : 0) + 'px,' + editorHomeY(i) + 'px,0)';
         row.querySelector('.er-num').textContent = String(i + 1);
@@ -1588,10 +1687,10 @@
         rowEnd = it.y + (it.sep ? ED_SEP : 72);
         row.style.visibility = it.y >= t.top && rowEnd <= t.top + ED_VIEW ? 'visible' : 'hidden';
         before = before || it.y < t.top; afterRows = afterRows || rowEnd > t.top + ED_VIEW;
-        if (it.sep) { setContent(row, 'sep|' + it.sep, esc(it.sep)); row.className = 'eo-sep'; return; }
+        if (it.sep) { setContent(row, 'sep|' + it.sep, function () { return esc(it.sep); }); row.className = 'eo-sep'; return; }
         j = list.indexOf(it.id); focus = f.zone === 'other' && j === f.j; a = app(it.id);
-        setContent(row, it.id, '<span class="panel-content">' + smallMark(a) + '<span class="eo-text">' + esc(a.name) + '</span><span class="eo-verb"></span></span>');
-        row.querySelector('.eo-verb').innerHTML = focus ? '<span class="verb' + (full ? ' is-off' : '') + '">' + (full ? 'Home is full' : 'Add to Home') + '</span>' : '';
+        setContent(row, it.id, function () { return '<span class="panel-content">' + smallMark(a) + '<span class="eo-text">' + esc(a.name) + '</span><span class="eo-verb"></span></span>'; });
+        setHTML(row.querySelector('.eo-verb'), focus ? '<span class="verb' + (full ? ' is-off' : '') + '">' + (full ? 'Home is full' : 'Add to Home') + '</span>' : '');
         row.className = 'eo' + (focus ? ' is-focus' : '');
         row.setAttribute('role', 'button');
         attrs(row, 'other', j, 'editor.add.' + it.id);
@@ -1622,9 +1721,13 @@
   function fieldSrc(id, material) { return 'assets/materials/' + id + (material === 'soft' ? '-field-blur.jpg' : material === 'tint' ? '-field-clear.jpg' : '-field-frost.jpg'); }
   function makeImg(cls, src) { var im = document.createElement('img'); im.className = cls; im.alt = ''; im._src = src; im.src = src; return im; }
   function whenReady(im, done) {
-    var fin = false, timer = setTimeout(function () { finish(false); }, 8000);
+    var fin = false, timer = setTimeout(function () { finish(!!(im.complete && im.naturalWidth)); }, document.hidden ? 20000 : 8000);
     function finish(ok) { if (fin) return; fin = true; clearTimeout(timer); done(ok); }
-    function ready() { if (im.decode) im.decode().then(function () { finish(true); }, function () { finish(false); }); else finish(true); }
+    function ready() {
+      // Hidden TV prelaunch may suspend decode even after a valid image loads.
+      if (document.hidden || !im.decode) { finish(true); return; }
+      im.decode().then(function () { finish(true); }, function () { finish(!!(im.complete && im.naturalWidth)); });
+    }
     if (im.complete) { if (im.naturalWidth) ready(); else finish(false); }
     else { im.onload = ready; im.onerror = function () { finish(false); }; }
   }
@@ -1702,6 +1805,7 @@
     }
     function complete() {
       if (!imageDone || !fontDone || failed || token !== wallToken) return;
+      if (document.hidden) { finish(loadedBundle); return; }
       window.requestAnimationFrame(function () { if (!failed && token === wallToken) finish(loadedBundle); });
     }
     needs = target.bg === 'photo' && S.bundleKey !== bundleKey(target) && (!S.shown || S.shown.bg !== 'photo' || target.wall !== S.c.wall || materialApplies(target));
@@ -1759,15 +1863,68 @@
       if (rotationActive()) setLook({ wall: WALLS[(wallIndex(S.c.wall) + 1) % WALLS.length].id }, { row: 'bg' });
     }, Math.max(10, mode().min * QA.minuteMs - activeMs));
   }
-  function updateClock() {
+  /* The clock checks every 10 seconds but redraws only when the minute changes. A one-minute timer
+     paused by TV standby would otherwise show the old time for up to a minute after the TV wakes. */
+  var clockMinute = -1;
+  function updateClock() { clockMinute = -1; clockTick(); }
+  function clockTick() {
+    var minute;
     clearTimeout(clockTimer);
     if (document.hidden) return;
-    if (top().id === 'home' || isSettingsDetail(top())) renderCaption(top(), homeState(top()));
-    clockTimer = setTimeout(updateClock, 60000 - (Date.now() % 60000) + 30);
+    minute = Math.floor(Date.now() / 60000);
+    if (minute !== clockMinute) {
+      clockMinute = minute;
+      if (top().id === 'home' || isSettingsDetail(top())) renderCaption(top(), homeState(top()));
+    }
+    clockTimer = setTimeout(clockTick, Math.min(10000, 60000 - (Date.now() % 60000) + 30));
+  }
+
+  /* ---------- OLED screen care ---------- */
+  /* Home can sit unchanged for hours on an OLED. After 3 idle minutes the interface dims and the whole
+     scene drifts a few pixels every 4 minutes; after 15 minutes it fades further. Any key or click wakes
+     it at once. The key that wakes a faded screen does nothing else, so a dark screen never launches an app. */
+  var IDLE_DIM = 3, IDLE_SHIFT = 4, IDLE_FADE = 15;
+  var IDLE_STEPS = [[0, 0], [-6, -4], [5, -5], [6, 4], [-4, 6], [0, -6], [-6, 2], [4, 1]];
+  var idle = { level: 0, step: 0, timer: 0, at: Date.now() };
+  function idleMinutes(n) { return n * (QA.idleMinuteMs || 60000); }
+  function idleClasses() { return idle.level ? ' is-idle' + (idle.level > 1 ? ' is-deep-idle' : '') : ''; }
+  function idleAllowed() { return !document.hidden && !S.source && top().id === 'home' && widgetValue('care') !== false; }
+  function applyIdle() {
+    var step = IDLE_STEPS[idle.step];
+    stage.style.setProperty('--idle-x', step[0] + 'px');
+    stage.style.setProperty('--idle-y', step[1] + 'px');
+    stage.className = stage.className.replace(/\s+is-(?:deep-)?idle/g, '') + idleClasses();
+  }
+  function scheduleIdle() {
+    clearTimeout(idle.timer); idle.timer = 0;
+    if (!idleAllowed()) return;
+    var wait = idle.level ? idleMinutes(IDLE_SHIFT) : idleMinutes(IDLE_DIM) - (Date.now() - idle.at);
+    idle.timer = setTimeout(idleTick, Math.max(50, wait));
+  }
+  function idleTick() {
+    idle.timer = 0;
+    if (!idleAllowed()) { wake(); return; }
+    idle.level = Date.now() - idle.at >= idleMinutes(IDLE_FADE) - 50 ? 2 : 1;
+    idle.step = (idle.step + 1) % IDLE_STEPS.length || 1;
+    applyIdle(); scheduleIdle();
+  }
+  /* Returns true when the input only woke a faded screen and should do nothing else. */
+  function wake() {
+    var was = idle.level;
+    idle.at = Date.now();
+    if (was) { idle.level = 0; idle.step = 0; applyIdle(); }
+    scheduleIdle();
+    return was > 1;
   }
   function focusStage() { try { stage.focus({ preventScroll: true }); } catch (e) { stage.focus(); } }
-  function after() { norm(); render(); syncRotation(); }
+  function after() {
+    norm(); var t = top();
+    if (t.group === 'inputs' && t.refreshInputs && !t.loading && !document.hidden) { t.refreshInputs = false; loadInputs(t); }
+    render(); syncRotation();
+  }
+  function refreshInputsOnReturn() { var t = top(); if (t.group === 'inputs' && !t.loading) t.refreshInputs = true; }
   function goScene(name) {
+    FrameDevice.cancelSource();
     if (top().id === 'wallpaper') cancelWallpaperTimer(top());
     S.stack = [S.stack[0]]; S.stack[0].f.zone = 'apps'; clearSession(); restoreLook();
     if (name === 'apps') openApps();
@@ -1804,6 +1961,7 @@
     norm();
     render();
     syncRotation();
+    scheduleIdle();
   }
 
   utilsEl.addEventListener('mouseover', function (ev) {
@@ -1812,7 +1970,7 @@
     while (b && b !== utilsEl && !(b.getAttribute && b.getAttribute('data-z'))) b = b.parentNode;
     if (!b || b === utilsEl || (ev.relatedTarget && b.contains(ev.relatedTarget))) return;
     z = b.getAttribute('data-z'); i = Number(b.getAttribute('data-i'));
-    if ((t.id !== 'home' || z !== 'util') && (t.id !== 'arrange' || z !== 'ctl')) return;
+    if (t.id !== 'home' || z !== 'util') return;
     if (t.f.zone === z && t.f.u === i) return;
     t.f.zone = z; t.f.u = i;
     if (z === 'util') S.lastUtil = i;
@@ -1822,25 +1980,31 @@
     var el = ev.target;
     while (el && el !== stage && !(el.getAttribute && el.getAttribute('data-z'))) el = el.parentNode;
     focusStage();
-    if (!el || el === stage) return;
+    if (wake() || !el || el === stage) return;
     pointAt(el);
   });
   var heldKeys = {};
   document.addEventListener('keydown', function (ev) {
-    var code = ev.keyCode, k = KEYS[code];
+    var code = ev.keyCode, k = KEYS[code], faded = wake();
     if (code === 9) { ev.preventDefault(); return; }
     if (!k || ev.metaKey || ev.ctrlKey || ev.altKey) return;
     ev.preventDefault();
     if (k === 'ok' || k === 'back') { if (ev.repeat || heldKeys[code]) return; heldKeys[code] = true; }
+    if (faded) return;
     press(k);
   });
   document.addEventListener('keyup', function (ev) { delete heldKeys[ev.keyCode]; });
   window.addEventListener('blur', function () { heldKeys = {}; });
-  window.addEventListener('focus', function () { release(); focusStage(); after(); updateClock(); });
+  window.addEventListener('focus', function () { FrameDevice.cancelSource(); release(); wake(); refreshInputsOnReturn(); focusStage(); after(); updateClock(); });
   document.addEventListener('visibilitychange', function () {
     heldKeys = {};
-    if (document.hidden) { pauseRotation(); clearTimeout(clockTimer); }
-    else { release(); after(); updateClock(); focusStage(); }
+    if (document.hidden) { FrameDevice.cancelSource(); exitSource(); pauseRotation(); clearTimeout(clockTimer); clearTimeout(idle.timer); }
+    else {
+      release(); wake();
+      if (S.c.bg === 'photo' && !S.pending && !S.previewBundle && (!committedBundle || S.bundleKey !== bundleKey(S.c))) setLook({}, { transient: true, startup: true });
+      refreshInputsOnReturn(); after(); updateClock(); focusStage();
+      if (Date.now() - lastSources > 60000) seedSources();
+    }
   });
   window.addEventListener('resize', fit);
 
@@ -1877,6 +2041,21 @@
   /* ---------- Start ---------- */
   cueL.innerHTML = icon('left'); cueR.innerHTML = icon('right');
   initialise();
+  if (window.CleanFrameWidgets) window.CleanFrameWidgets.onChange(function () { if (top().id === 'home' || isSettingsDetail(top())) renderCaption(top(), homeState(top())); });
   setLook({}, { transient: true, startup: true });
-  norm(); render(); fit(); focusStage(); updateClock(); syncRotation();
+  norm(); render(); fit(); focusStage(); updateClock(); syncRotation(); scheduleIdle();
+  seedSources();
+  // A remote button may relaunch CleanFrame asking for an HDMI input. The launch data persists for
+  // the life of the app, so remember what was already opened: a focus change must not re-open (or
+  // re-fail) the input it already handled. The HDMI tiles on Home are the explicit way to reopen.
+  var handledSource = null;
+  function applyRequestedSource() {
+    var src = FrameDevice.requestedSource && FrameDevice.requestedSource();
+    if (!src || handledSource === src || busy) return;
+    if (!app(src) || app(src).action !== 'hdmi') return;
+    handledSource = src;
+    launch(src);
+  }
+  applyRequestedSource();
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) applyRequestedSource(); });
 })();
