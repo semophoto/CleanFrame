@@ -2,6 +2,8 @@
 
 Recorded through 20 October 2026. These results describe the maintainer's TV. Other models, firmware and operating systems need their own checks. Repo-only work must not contact the TV.
 
+Reports from other owners are listed separately in [TV compatibility evidence](compatibility.md). They do not change the reference results below.
+
 ## Hardware and OS
 
 | Item | Reference setup |

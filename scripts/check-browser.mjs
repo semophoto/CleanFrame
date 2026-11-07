@@ -49,11 +49,13 @@ async function run(name, fn) {
 async function closePage() { if (current) { current.__closing = true; await current.close(); current = null; } }
 
 // Production still calls its unmodified device.js adapter.
-function installHarness({ seed, legacy, mock, catalog, minuteMs, idleMinuteMs, widgets, catalogFailure, noFontAPI, storageFailure, sources }) {
+function installHarness({ seed, legacy, mock, catalog, minuteMs, idleMinuteMs, widgets, catalogFailure, noFontAPI, storageFailure, sources, currentAppId, initiallyHidden, pauseHiddenFrames, rejectDecode, inputUnavailable }) {
   if (!sessionStorage.getItem('__cleanframe_seeded')) {
     if (seed !== undefined) localStorage.setItem('cleanframe.home.v1', typeof seed === 'string' ? seed : JSON.stringify(seed));
     if (legacy !== undefined) localStorage.setItem('cleanframe.shore.v1', typeof legacy === 'string' ? legacy : JSON.stringify(legacy));
     if (widgets !== undefined) localStorage.setItem('cleanframe.widgets.v1', JSON.stringify(widgets));
+    // Without an explicit `sources` list, mark every port as already offered so Home keeps its seeded apps.
+    if (sources === undefined) localStorage.setItem('cleanframe.sources.v1', JSON.stringify(['hdmi1', 'hdmi2', 'hdmi3', 'hdmi4']));
     sessionStorage.setItem('__cleanframe_seeded', '1');
   }
   window.ShoreQA = { minuteMs, idleMinuteMs };
@@ -65,11 +67,23 @@ function installHarness({ seed, legacy, mock, catalog, minuteMs, idleMinuteMs, w
     if (window.__failWrites && key === 'cleanframe.home.v1') throw new DOMException('QA storage failure', 'QuotaExceededError');
     return set.call(this, key, value);
   };
+  const queuedFrames = new Map(), requestFrame = window.requestAnimationFrame.bind(window), cancelFrame = window.cancelAnimationFrame.bind(window);
+  let nextFrame = 0;
+  if (pauseHiddenFrames) {
+    window.requestAnimationFrame = callback => {
+      if (!document.hidden) return requestFrame(callback);
+      const id = --nextFrame; queuedFrames.set(id, callback); return id;
+    };
+    window.cancelAnimationFrame = id => { if (queuedFrames.has(id)) queuedFrames.delete(id); else cancelFrame(id); };
+  }
   window.__setHidden = value => {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => value });
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => value ? 'hidden' : 'visible' });
+    if (!value) { queuedFrames.forEach(callback => requestFrame(callback)); queuedFrames.clear(); }
     document.dispatchEvent(new Event('visibilitychange'));
   };
+  if (initiallyHidden) window.__setHidden(true);
+  if (rejectDecode) HTMLImageElement.prototype.decode = function () { return Promise.reject(new DOMException('Synthetic decode rejection')); };
   if (noFontAPI) Object.defineProperty(document, 'fonts', { configurable: true, value: undefined });
   if (!mock) return;
   window.__tv = { catalog, catalogFailure: !!catalogFailure, launchFailure: false, holdCatalog: false, pending: [], calls: [], catalogCalls: 0 };
@@ -85,6 +99,7 @@ function installHarness({ seed, legacy, mock, catalog, minuteMs, idleMinuteMs, w
     ApplicationControlData: function (key, value) { this.key = key; this.value = value; },
     ApplicationControl: function (operation, uri, mime, category, data) { Object.assign(this, { operation, uri, mime, category, data }); },
     application: {
+      getCurrentApplication() { return { appInfo: { id: currentAppId || '2WypXqAbpb.CleanFrame' } }; },
       getAppsInfo(ok, fail) {
         const tv = window.__tv;
         tv.catalogCalls++;
@@ -101,8 +116,25 @@ function installHarness({ seed, legacy, mock, catalog, minuteMs, idleMinuteMs, w
       }
     }
   };
+  if (inputUnavailable) { delete tizen.systeminfo; delete tizen.tvwindow; }
+  // `sources` drives the S85F dock-tile mock above; otherwise use the Inputs chooser mock.
+  if (!inputUnavailable && sources === undefined) {
+    __tv.inputRequests = []; __tv.sourceFailure = false; __tv.currentInput = 2;
+    __tv.videoSources = { connected: [{ type: 'HDMI', number: 2 }], disconnected: [{ type: 'HDMI', number: 1 }, { type: 'HDMI', number: 3 }] };
+    tizen.systeminfo = { getPropertyValue(name, ok, fail) {
+      const finish = () => __tv.inputDiscoveryFailure ? fail({ name: 'SecurityError' }) : ok(__tv.videoSources);
+      if (__tv.holdInputs) __tv.inputRequests.push(finish); else setTimeout(finish, 0);
+    } };
+    tizen.tvwindow = {
+      getSource() { return { type: 'HDMI', number: __tv.currentInput }; },
+      setSource(source, ok, fail) {
+        __tv.calls.push({ method: 'setSource', number: source.number });
+        setTimeout(() => { if (__tv.sourceFailure) fail({ name: 'SecurityError' }); else { __tv.currentInput = source.number; ok(source); } }, 0);
+      }
+    };
+  }
 }
-async function page(options = {}) {
+async function page(options = {}, setup) {
   current = await preview.browser.newPage({ viewport: { width: 1920, height: 1080 } });
   const owner = current;
   current.setDefaultTimeout(10000);
@@ -122,9 +154,10 @@ async function page(options = {}) {
   await current.route(/^https:\/\/(tilecache\.rainviewer\.com|services\.arcgisonline\.com)\//, route => route.fulfill({ status: 200, contentType: 'image/png', body: PNG }));
   await current.route(/^https:\/\/(ipapi\.co|ipwho\.is)\//, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(NETWORK_PLACE) }));
   await current.addInitScript(installHarness, { mock: true, catalog: CATALOG, minuteMs: 60000, seed: baseline(), ...options });
-  await current.goto(preview.baseURL + '/home/');
-  await ready();
-  await current.waitForLoadState('networkidle');
+  if (setup) await setup(current);
+  await current.goto(preview.baseURL + '/home/', { waitUntil: options.settleNetwork === false ? 'domcontentloaded' : 'load' });
+  if (options.waitReady !== false) await ready();
+  if (options.settleNetwork !== false) await current.waitForLoadState('networkidle');
   return current;
 }
 const state = () => current.evaluate(() => ShoreQA.state());
@@ -255,6 +288,198 @@ try {
     await page({ seed: baseline({ mode: 'open' }), storageFailure: true });
     check('Failed open-mode write retains prior photo', (await state()).wallpaper === walls[0].id && (await stored()).wallpaper === walls[0].id);
   });
+  await run('Font recovery invalidates fallback measurements', async () => {
+    const seed = baseline({ dock: ['sbs', 'netflix'], lastApp: 'sbs', look: { bg: 'photo', layout: 'list', apps: 'both', font: 'manrope', controls: 'both', focus: 'glass', material: 'soft' } });
+    const geometry = () => current.evaluate(() => ({
+      plate: document.querySelector('#phScene > .ph-plate.is-current').style.width,
+      names: [...document.querySelectorAll('.ph-name')].map(e => ({ text: e.textContent, size: e.style.fontSize, top: e.style.top }))
+    }));
+    await page({ seed });
+    const expected = await geometry();
+    await closePage();
+    let releaseFont, requests = 0;
+    const fontGate = new Promise(resolve => { releaseFont = resolve; });
+    await page({ seed, settleNetwork: false }, p => p.route('**/assets/manrope.woff2', async route => {
+      requests++; await fontGate; await route.continue();
+    }));
+    check('Slow baseline font keeps Home usable', (await state()).fonts.baselineFallback && (await call('where')).focusCount === 1 && requests > 0);
+    releaseFont();
+    await current.waitForFunction(() => !ShoreQA.state().fonts.baselineFallback && ShoreQA.state().fonts.loaded.includes('manrope'));
+    check('Recovered font restores normal label and focus geometry', same(await geometry(), expected), { expected, actual: await geometry() });
+  });
+  await run('Hidden boot installs a complete wallpaper without animation frames', async () => {
+    await page({ initiallyHidden: true, pauseHiddenFrames: true, rejectDecode: true });
+    const before = await stored();
+    check('Hidden startup settles with every wallpaper image loaded', await current.evaluate(() => document.hidden && ['photo', 'matImg', 'phFieldImg', 'utFieldImg'].every(id => {
+      const image = document.getElementById(id); return image.complete && image.naturalWidth > 0;
+    })));
+    await current.evaluate(() => window.__setHidden(false)); await ready();
+    check('Showing the launcher keeps the same saved appearance', same(await stored(), before) && (await call('where')).focusCount === 1);
+    await closePage();
+    await page({ rejectDecode: true });
+    check('A valid loaded image survives a visible decode rejection', (await state()).shown.wall === (await state()).wallpaper && !(await state()).pending);
+  });
+  await run('Hidden boot retries failed assets on becoming visible', async () => {
+    let failImages = true;
+    await page({ initiallyHidden: true, pauseHiddenFrames: true, waitReady: false, settleNetwork: false }, async p => {
+      p.__expectedFailures.push('/assets/materials/');
+      await p.route('**/assets/materials/*', route => failImages ? route.abort('failed') : route.continue());
+    });
+    await current.waitForFunction(() => window.ShoreQA && !ShoreQA.state().pending && !ShoreQA.ready());
+    const before = await stored();
+    failImages = false;
+    await current.evaluate(() => window.__setHidden(false)); await ready();
+    check('Visible retry restores a complete wallpaper without a preference write', same(await stored(), before) && await current.evaluate(() => document.getElementById('photo').naturalWidth > 0));
+  });
+  await run('Visibility return preserves an unapplied wallpaper preview', async () => {
+    await page(); await wallpaper(); await nav('down'); await wallpaperSettled(walls[1].id);
+    const before = await wallpaperBundle(), saved = await wallpaperSaved();
+    await current.evaluate(() => { window.__setHidden(true); window.__setHidden(false); });
+    check('Returning retains the preview and saved choice', same(await wallpaperBundle(), before) && same(await wallpaperSaved(), saved) && (await state()).wallpaperPicker.candidate === walls[1].id);
+  });
+  await run('Chromium 85 layout without inset shorthand', async () => {
+    await page({}, p => p.route('**/style.css', async route => {
+      const response = await route.fetch();
+      await route.fulfill({ response, body: (await response.text()).replace(/([;{])inset:0(?=[;}])/g, '$1') });
+    }));
+    for (const viewport of [{ width: 1920, height: 1080 }, { width: 1280, height: 720 }]) {
+      await current.setViewportSize(viewport);
+      for (const layout of ['dock', 'list']) {
+        await look({ layout, focus: 'glass' }); await scene('home');
+        const labels = await current.locator(layout === 'dock' ? '.tile-content' : '.ph-name').evaluateAll(elements => elements.filter(e => e.getClientRects().length).map(e => e.getBoundingClientRect().width));
+        check(layout + ' labels retain width at ' + viewport.width, labels.length > 0 && labels.every(width => width > 0), labels);
+        await nav(layout === 'dock' ? 'up' : 'right');
+        await current.waitForTimeout(240);
+        check('Utility focus and rounded lens align at ' + viewport.width + ' in ' + layout, await current.evaluate(() => {
+          const button = document.querySelector('.u.is-focus'), lens = document.querySelector('.ut-lens.is-current');
+          return ShoreQA.where().focusCount === 1 && button && lens && Math.abs(button.getBoundingClientRect().top - lens.getBoundingClientRect().top) < 4;
+        }));
+        await current.screenshot({ path: out + 'compat-' + layout + '-' + viewport.width + '.png' });
+        await group('background');
+        check('Appearance keeps full stage bounds at ' + viewport.width + ' in ' + layout, await current.locator('.appearance').evaluate(e => {
+          const r = e.getBoundingClientRect(), stage = document.getElementById('stage').getBoundingClientRect();
+          return Math.abs(r.width - stage.width) < 1 && Math.abs(r.height - stage.height) < 1;
+        }));
+        await library();
+        check('All apps content keeps its width at ' + viewport.width + ' in ' + layout, await current.locator('.gt .panel-content').evaluateAll(elements => elements.length > 0 && elements.every(e => e.getBoundingClientRect().width > 0)));
+      }
+    }
+  });
+  await run('Utility control geometry', async () => {
+    await page();
+    for (const width of [1920, 1280]) {
+      await current.setViewportSize({ width, height: width * 9 / 16 });
+      for (const layout of ['dock', 'list']) for (const controls of ['icons', 'both', 'text']) {
+        await look({ bg: 'photo', layout, controls, focus: 'glass', font: 'manrope' }); await scene('home');
+        if ((await call('where')).zone === 'util') await nav('back');
+        await nav(layout === 'dock' ? 'up' : 'right');
+        await nav(...Array(3).fill(layout === 'dock' ? 'left' : 'up'));
+        await current.waitForTimeout(180);
+        const spacing = await current.evaluate(({ layout, controls }) => {
+          const scale = document.getElementById('stage').getBoundingClientRect().width / 1920;
+          return [...document.querySelectorAll('#utils .u')].map(button => {
+            const content = button.querySelector('.u-content');
+            const children = [...content.children].filter(e => getComputedStyle(e).display !== 'none');
+            const visibleWidth = children.reduce((sum, e) => sum + e.getBoundingClientRect().width / scale, 0);
+            const gap = controls !== 'both' ? 0 : layout === 'dock' ? 10 : button.dataset.action === 'util.settings' ? 18.9 : 17.9;
+            return { action: button.dataset.action, children: children.length, extraWidth: content.getBoundingClientRect().width / scale - visibleWidth, gap };
+          });
+        }, { layout, controls });
+        check(layout + '/' + controls + ' uses spacing between visible children at ' + width,
+          spacing.length === 3 && spacing.every(s => s.children === (controls === 'both' ? 2 : 1) && Math.abs(s.extraWidth - s.gap) < .5), spacing);
+        const focused = [];
+        for (let i = 0; i < 3; i++) {
+          if (i) await nav(layout === 'dock' ? 'right' : 'down');
+          focused.push(await current.evaluate(() => {
+            const button = document.querySelector('#utils .u.is-focus'), lens = document.querySelector('.ut-lens.is-current');
+            if (!button || !lens || ShoreQA.where().focusCount !== 1) return false;
+            const bounds = lens.getBoundingClientRect();
+            const content = [...button.querySelector('.u-content').children].filter(e => getComputedStyle(e).display !== 'none');
+            const caption = document.querySelector('.util-focus-label.is-on');
+            if (caption && ShoreQA.state().look.layout === 'list') content.push(caption);
+            return content.every(e => { const r = e.getBoundingClientRect(); return r.left >= bounds.left - 1 && r.right <= bounds.right + 1 && r.top >= bounds.top - 1 && r.bottom <= bounds.bottom + 1; });
+          }));
+        }
+        check(layout + '/' + controls + ' keeps each focused control inside its lens at ' + width, focused.every(Boolean), focused);
+      }
+    }
+  });
+  await run('Panel spacing geometry', async () => {
+    // The editor's divider appears once Home holds more than five apps.
+    await page({ seed: baseline({ dock: PRIMARY.concat(FILLERS) }) });
+    for (const width of [1920, 1280]) {
+      await current.setViewportSize({ width, height: width * 9 / 16 });
+      await look({ layout: 'dock', focus: 'glass' }); await editor();
+      const divider = await current.locator('.ed-order-break.is-on').evaluate(e => {
+        const scale = document.getElementById('stage').getBoundingClientRect().width / 1920;
+        const text = document.createRange(); text.selectNodeContents(e);
+        const after = getComputedStyle(e, '::after');
+        return (e.getBoundingClientRect().right - text.getBoundingClientRect().right) / scale - parseFloat(after.width);
+      });
+      check('Editor divider separates its text and line at ' + width, Math.abs(divider - 16) < .5, divider);
+      await scene('home'); await nav('back');
+      const actions = await current.locator('.msg-acts>button').evaluateAll(elements => {
+        const scale = document.getElementById('stage').getBoundingClientRect().width / 1920;
+        return elements.length === 2 ? (elements[1].getBoundingClientRect().left - elements[0].getBoundingClientRect().right) / scale : null;
+      });
+      check('Leave actions retain their separation at ' + width, actions !== null && Math.abs(actions - 12) < .5, actions);
+      await scene('settings');
+      const groups = await current.locator('.settings-group').evaluateAll(elements => {
+        const scale = document.getElementById('stage').getBoundingClientRect().width / 1920;
+        return elements.map(e => (e.querySelector('.ico').getBoundingClientRect().left - e.querySelector('.settings-group-copy').getBoundingClientRect().right) / scale);
+      });
+      // Seven groups: the six upstream ones plus Clock and widgets.
+      check('Settings group arrows stay separate from their copy at ' + width, groups.length === 7 && groups.every(gap => gap >= 31.5), groups);
+      await wallpaper();
+      const caption = await current.locator('.wallpaper-preview-name').evaluate(e => {
+        const scale = document.getElementById('stage').getBoundingClientRect().width / 1920;
+        return (e.children[1].getBoundingClientRect().left - e.children[0].getBoundingClientRect().right) / scale;
+      });
+      check('Wallpaper name and count retain their separation at ' + width, Math.abs(caption - 24) < .5, caption);
+    }
+  });
+  await run('HDMI input chooser and recovery', async () => {
+    await page();
+    for (const width of [1920, 1280]) for (const layout of ['dock', 'list']) {
+      await current.setViewportSize({ width, height: width * 9 / 16 }); await look({ layout });
+      await group('samsung'); await act('samsung.inputs');
+      await current.waitForSelector('[data-action="input.1"]');
+      const entries = await current.locator('.section-inputs .setting-choice').allTextContents();
+      check('Inputs reflect actual ports and sleeping/active status ' + layout + '/' + width,
+        entries.length === 3 && entries.some(x => /HDMI 1.*Disconnected/.test(x)) && entries.some(x => /HDMI 2.*Active/.test(x)) && !entries.some(x => /HDMI 4/.test(x)), entries);
+      check('Inputs fit and retain one focus ' + layout + '/' + width, await current.locator('.section-inputs .setting-choice').evaluateAll(elements => {
+        const stage = document.getElementById('stage').getBoundingClientRect();
+        return ShoreQA.where().focusCount === 1 && elements.every(e => { const r=e.getBoundingClientRect(); return r.top>=stage.top && r.bottom<=stage.bottom && r.left>=stage.left && r.right<=stage.right; });
+      }));
+      await current.screenshot({ path: out + 'inputs-' + layout + '-' + width + '.png' });
+      await nav('back');
+      check('Inputs Back returns to Samsung entry ' + layout + '/' + width, (await state()).settingsGroup === 'samsung' && (await state()).focusAction === 'samsung.inputs');
+    }
+    await act('samsung.inputs'); await current.waitForSelector('[data-action="input.1"]');
+    await act('input.1'); await current.waitForFunction(() => __tv.calls.some(c => c.id === 'org.tizen.tv-viewer'));
+    check('Sleeping input selects its exact port before viewer handoff', await current.evaluate(() => __tv.calls[0].method === 'setSource' && __tv.calls[0].number === 1 && __tv.calls[1].id === 'org.tizen.tv-viewer'));
+    await current.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await current.waitForFunction(() => [...document.querySelectorAll('.section-inputs .setting-choice')].some(e => /HDMI 1.*Active/.test(e.textContent)));
+    check('Returning from viewer refreshes the Active port', await current.locator('[data-action="input.1"]').innerText().then(text => text.includes('Active')));
+    await current.evaluate(() => { __tv.currentInput = 3; Object.defineProperty(document, 'hidden', { configurable: true, value: false }); document.dispatchEvent(new Event('visibilitychange')); });
+    await current.waitForFunction(() => document.querySelector('[data-action="input.3"]').textContent.includes('Active'));
+    check('Visibility return refreshes an externally changed input', !(await current.locator('[data-action="input.1"]').innerText()).includes('Active'));
+    await current.evaluate(() => { __tv.sourceFailure = true; __tv.calls = []; });
+    await act('input.2'); await current.waitForFunction(() => ShoreQA.state().view === 'message');
+    check('Failed input selection displays an error and keeps viewer closed', (await current.locator('#stage').innerText()).includes('could not') && await current.evaluate(() => __tv.calls.length === 1));
+    await nav('back', 'back');
+    await current.evaluate(() => { __tv.holdInputs = true; });
+    await act('samsung.inputs'); await nav('back');
+    await current.evaluate(() => __tv.inputRequests.splice(0).forEach(f => f()));
+    check('Late discovery cannot reopen a closed chooser', (await state()).settingsGroup === 'samsung' && (await call('where')).focusCount === 1);
+    await closePage(); await page({ inputUnavailable: true }); await group('samsung'); await act('samsung.inputs');
+    check('Unavailable source API offers retry without invented ports', !(await current.locator('[data-action^="input."]').count()) && (await current.locator('#stage').innerText()).includes('Open CleanFrame on the TV'));
+    await nav('back'); check('Unavailable inputs remain escapable', (await state()).settingsGroup === 'samsung');
+    await closePage(); await page(); await current.evaluate(() => { __tv.videoSources = { connected: [], disconnected: [] }; });
+    await group('samsung'); await act('samsung.inputs');
+    await current.waitForSelector('[data-action="inputs.retry"]');
+    check('Empty inventory is truthful', (await current.locator('#stage').innerText()).includes('No HDMI inputs were reported'));
+  });
   await run('Real catalogue and native launch boundary', async () => {
     await page(); await library();
     const names = await current.locator('[data-action^="apps.open."] .label').allTextContents();
@@ -283,6 +508,20 @@ try {
     await current.evaluate(() => { window.dispatchEvent(new Event('focus')); __tv.launchFailure = true; });
     await scene('home'); await act('home.app.nuvio'); await current.waitForFunction(() => ShoreQA.where().view === 'message');
     check('Launch failure is shown', /could not|unavailable|try again/i.test(await current.locator('#stage').innerText()));
+  });
+  await run('Independent app identity self-filter', async () => {
+    const appId = 'AbCdEf1234.MyHome';
+    await page({ currentAppId: appId, catalog: CATALOG.filter(a => a.id !== 'nClrkHome1.FrameHome').concat({ id: appId, name: 'Family Home', show: true }) });
+    await library();
+    const independent = await state();
+    const names = await current.locator('[data-action^="apps.open."] .label').allTextContents();
+    check('Independent build excludes its actual application ID', independent.catalog.ids.includes(EXTRA) && !independent.catalog.ids.includes(appId) && !names.includes('Family Home'));
+    await closePage();
+    await page();
+    await current.evaluate(() => { delete tizen.application.getCurrentApplication; });
+    await library();
+    const fallback = await state();
+    check('Unavailable current-app API keeps reference identity fallback', fallback.catalog.ids.includes(EXTRA) && !fallback.catalog.ids.includes('nClrkHome1.FrameHome'));
   });
   await run('Catalogue failure and retry', async () => {
     await page({ catalogFailure: true }); await library();

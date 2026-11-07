@@ -5,6 +5,7 @@ import json
 import zipfile
 
 from font_assets import ROOT, write_widget_archive
+from private_files import check_widget
 
 output = ROOT / 'dist/CleanFrame-public-unsigned.wgt'
 output.parent.mkdir(exist_ok=True)
@@ -17,6 +18,7 @@ with zipfile.ZipFile(output, 'a', zipfile.ZIP_DEFLATED) as archive:
     for notice in ['LICENSE', 'THIRD_PARTY_NOTICES.md']:
         assert (ROOT / notice).is_file(), 'Missing distribution notice: ' + notice
         archive.write(ROOT / notice, notice)
+check_widget(output)
 # Notices accompany the widget; original upstream asset licences are also in app/.
 for notice in ['LICENSE', 'THIRD_PARTY_NOTICES.md']:
     (output.parent / notice).write_bytes((ROOT / notice).read_bytes())

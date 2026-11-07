@@ -6,7 +6,9 @@ import json
 from pathlib import Path
 import subprocess
 import time
-import xml.etree.ElementTree as XML
+import zipfile
+from local_config import load_settings
+from private_files import check_signed_widget
 
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
@@ -19,11 +21,21 @@ host = args.host or config.get('host')
 if not host:
     raise SystemExit('Add the TV address to .local/device.json or pass --host.')
 ipaddress.ip_address(host)
-sdb = ROOT / '.local/tizen-sdk/tools/sdb'
-if not sdb.exists():
-    raise SystemExit('Local SDB tool missing. See docs/development.md.')
-manifest = XML.parse(ROOT / 'app/config.xml').getroot()
-app_id = manifest.find('{http://tizen.org/ns/widgets}application').get('id')
+try:
+    settings = load_settings()
+    sdb = settings['sdk_path'] / 'tools/sdb'
+    if not sdb.is_file():
+        raise ValueError('Local SDB tool missing. See docs/development.md.')
+    app_id = settings['identity']['app_id']
+    # Reject a mismatched or unsafe package before connecting to the device.
+    widget = ROOT / 'dist/CleanFrame.wgt'
+    if args.action == 'install':
+        if not widget.exists():
+            raise ValueError('Run npm run package first.')
+        check_signed_widget(widget, settings['identity'])
+except (ValueError, OSError, zipfile.BadZipFile) as error:
+    message = str(error) if isinstance(error, ValueError) else 'Cannot read local SDK settings or signed widget.'
+    raise SystemExit(message) from None
 
 
 def run(*command, quiet=False):
@@ -47,9 +59,6 @@ elif args.action == 'launch':
     if 'successfully launched' not in output:
         raise SystemExit('App launch was not confirmed. Check the TV.')
 else:
-    widget = ROOT / 'dist/CleanFrame.wgt'
-    if not widget.exists():
-        raise SystemExit('Run npm run package first.')
     digest = hashlib.sha256(widget.read_bytes()).hexdigest()[:12]
     remote = '/home/owner/share/tmp/sdk_tools/CleanFrame-' + digest + '-' + str(time.time_ns()) + '.wgt'
     pushed = run('-s', serial, 'push', str(widget), remote)

@@ -224,7 +224,7 @@
   /* One request covers the location and four points about 45 km away, so "rain nearby" needs no image analysis. */
   var RING = [[0, 0], [0.4, 0], [-0.4, 0], [0, 0.45], [0, -0.45]], WET = [51, 53, 55, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99];
   var SNOW = [71, 73, 75, 77, 85, 86];
-  function dayNum(arr) { var v = arr && arr[0]; return v != null && isFinite(v) ? Math.round(v) : null; }
+  function dayNum(arr) { var v = arr && arr[0]; return v !== null && v !== undefined && isFinite(v) ? Math.round(v) : null; }
   function snowy(point) {
     var cur = point && point.current;
     return !!cur && SNOW.indexOf(cur.weather_code) >= 0;
