@@ -373,7 +373,7 @@ try {
         await look({ bg: 'photo', layout, controls, focus: 'glass', font: 'manrope' }); await scene('home');
         if ((await call('where')).zone === 'util') await nav('back');
         await nav(layout === 'dock' ? 'up' : 'right');
-        await nav(...Array(3).fill(layout === 'dock' ? 'left' : 'up'));
+        await nav(...Array(4).fill(layout === 'dock' ? 'left' : 'up'));
         await current.waitForTimeout(180);
         const spacing = await current.evaluate(({ layout, controls }) => {
           const scale = document.getElementById('stage').getBoundingClientRect().width / 1920;
@@ -386,9 +386,9 @@ try {
           });
         }, { layout, controls });
         check(layout + '/' + controls + ' uses spacing between visible children at ' + width,
-          spacing.length === 3 && spacing.every(s => s.children === (controls === 'both' ? 2 : 1) && Math.abs(s.extraWidth - s.gap) < .5), spacing);
+          spacing.length === 4 && spacing.every(s => s.children === (controls === 'both' ? 2 : 1) && Math.abs(s.extraWidth - s.gap) < .5), spacing);
         const focused = [];
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 4; i++) {
           if (i) await nav(layout === 'dock' ? 'right' : 'down');
           focused.push(await current.evaluate(() => {
             const button = document.querySelector('#utils .u.is-focus'), lens = document.querySelector('.ut-lens.is-current');
@@ -1205,13 +1205,17 @@ try {
     await page({ sources: [1, 2] });
     await current.waitForFunction(() => ShoreQA.state().dock.includes('hdmi2'));
     check('Connected HDMI ports join Home once', same((await stored()).dock, PRIMARY.concat(['hdmi1', 'hdmi2'])));
-    await act('home.app.hdmi2'); await current.waitForFunction(() => document.documentElement.classList.contains('is-source'));
+    await act('home.app.hdmi2'); await current.waitForFunction(() => __tv.calls.some(c => c.id === 'org.tizen.tv-viewer'));
     const calls = await current.evaluate(() => __tv.calls.slice());
-    check('HDMI 2 shows full screen in the TV window', calls.some(c => c.method === 'setSource' && c.port === 2) && calls.some(c => c.method === 'show' && c.type === 'MAIN' && c.rect.join() === '0px,0px,1920px,1080px'), calls);
-    check('Interface hides while an input is shown', (await current.evaluate(() => getComputedStyle(document.getElementById('stage')).visibility)) === 'hidden');
-    await nav('right'); check('Remote keys other than Back stay with the input', await current.evaluate(() => document.documentElement.classList.contains('is-source')));
-    await nav('back');
-    check('Back hides the input and returns Home', !(await current.evaluate(() => document.documentElement.classList.contains('is-source'))) && (await current.evaluate(() => __tv.calls.at(-1).method)) === 'hide' && (await call('where')).view === 'home');
+    const picked = calls.findIndex(c => c.method === 'setSource' && c.port === 2), viewer = calls.findIndex(c => c.id === 'org.tizen.tv-viewer');
+    // The real input switch keeps the TV's own picture mode, Game Mode and HDR for that port.
+    check('HDMI 2 switches the TV input and hands off to the TV viewer', picked >= 0 && viewer > picked && !calls.some(c => c.method === 'show'), calls);
+    check('Interface is not covered by an in-app video window', !(await current.evaluate(() => document.documentElement.classList.contains('is-source'))));
+    await scene('home'); await act('util.inputs');
+    await current.waitForFunction(() => document.querySelector('[data-action="input.2"]'));
+    const back = await current.evaluate(() => document.querySelector('#appearanceBack').textContent.trim());
+    check('Inputs opens from the Home quick controls with Back to Home', back === 'Home', back);
+    await nav('back'); check('Back from quick Inputs returns Home', (await call('where')).view === 'home', await call('where'));
     await editor(); await remove('hdmi1'); await current.reload(); await ready();
     await current.waitForTimeout(200);
     check('A removed HDMI port is not added again', !(await state()).dock.includes('hdmi1') && (await state()).dock.includes('hdmi2'));
@@ -1219,8 +1223,8 @@ try {
     const dock = await current.evaluate(() => ({ cls: document.getElementById('stage').classList.contains('dock-lower'), top: document.getElementById('dock').getBoundingClientRect().top / (document.getElementById('stage').getBoundingClientRect().height / 1080), saved: JSON.parse(localStorage.getItem('cleanframe.widgets.v1')).config.dock }));
     await current.goto(preview.baseURL + '/home/?source=hdmi1'); await ready();
     await current.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')); });
-    await current.waitForFunction(() => document.documentElement.classList.contains('is-source'));
-    check('A source= launch opens that HDMI input full screen', (await current.evaluate(() => __tv.calls.filter(c => c.method === 'setSource').map(c => c.port))).includes(1));
+    await current.waitForFunction(() => __tv.calls.some(c => c.id === 'org.tizen.tv-viewer'));
+    check('A source= launch switches to that HDMI input', (await current.evaluate(() => __tv.calls.filter(c => c.method === 'setSource').map(c => c.port))).includes(1));
         check('Dock can sit lower and the choice is saved', dock.cls && Math.round(dock.top) === 756 && dock.saved === 'lower', dock);
   });
   section = 'Run integrity';
