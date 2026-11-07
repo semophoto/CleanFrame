@@ -47,12 +47,13 @@
   var LOOK_VALUES = { bg: ['dark', 'light', 'photo'], layout: ['list', 'dock'], apps: ['icons', 'both', 'text'], font: Object.keys(FONTS).filter(function (id) { return id === 'manrope' || PRIVATE_FONTS.indexOf(id) >= 0; }), controls: ['icons', 'both', 'text'], focus: ['type', 'glass'], material: ['soft', 'frost', 'tint'] };
   var LOOK_NAMES = { bg: 'Background', layout: 'Layout', apps: 'Apps', font: 'Font', controls: 'Home controls', focus: 'Focus', material: 'Material' };
   var VALUE_NAMES = { dark: 'Dark', light: 'Light', photo: 'Photo', list: 'List', dock: 'Dock', type: 'Type', glass: 'Glass', soft: 'Soft', frost: 'Frost', tint: 'Clear tint', icons: 'Icons', both: 'Icons and text', text: 'Text' };
-  var UTIL = { art: ['Art Mode', 'art'], apps: ['All apps', 'apps'], settings: ['Settings', 'settings'] };
+  var UTIL = { art: ['Art Mode', 'art'], inputs: ['Inputs', 'input'], apps: ['All apps', 'apps'], settings: ['Settings', 'settings'] };
   var MSG = {
     leave: { title: 'Leave Home?', line: 'Open Samsung Home?', note: '', actions: [['stay', 'Stay'], ['samsung', 'Samsung Home']] }
   };
   var SVG = {
     art: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="9.8" r="1.5"/><path d="m4.5 17.5 4.5-4.5 3 3 2.5-2.5 5 5"/>',
+    input: '<path d="M2.5 7h19v6l-3 4.5h-13l-3-4.5Z"/><path d="M7 11h10"/>',
     apps: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.6"/>',
     settings: '<path d="m9 3-.6 2.4-2 1.2L4 6l-2 3.5L3.8 11v2L2 14.5 4 18l2.4-.6 2 1.2L9 21h6l.6-2.4 2-1.2 2.4.6 2-3.5-1.8-1.5v-2L22 9.5 20 6l-2.4.6-2-1.2L15 3Z"/><circle cx="12" cy="12" r="3.2"/>',
     home: '<path d="M4 11 12 4.5l8 6.5v8a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1Z"/>',
@@ -468,10 +469,6 @@
     });
   }
   /* A shown HDMI input covers the whole screen; Back hides it and returns to Home. */
-  function enterSource(a) {
-    S.source = a;
-    document.documentElement.classList.add('is-source');
-  }
   function exitSource() {
     if (!S.source) return;
     S.source = null;
@@ -504,7 +501,9 @@
     if (!a || busy) return;
     if (S.c.home.indexOf(id) >= 0) { c = next(S.c.home.slice(), S.c.recent.slice()); c.lastApp = id; write(c, 'Last app'); }
     S.press = id; S.lastLaunch = a.name;
-    if (a.action === 'hdmi') { perform(a.name, function (done) { FrameDevice.showSource(a.port, function (err) { if (!err) enterSource(a); done(err); }); }); return; }
+    /* HDMI tiles switch the TV's real input (through the TV viewer) rather than showing it inside CleanFrame,
+       so the TV keeps that input's own picture mode, Game Mode, HDR and remote control. */
+    if (a.action === 'hdmi') { perform(a.name, function (done) { FrameDevice.setSource(a.port, function (err) { done(err && err.cancelled ? null : err); }); }); return; }
     perform(a.name, a.action === 'art' ? FrameDevice.art : function (done) { FrameDevice.launchApp(a.appId, done); });
   }
   function refreshCatalog() {
@@ -535,7 +534,7 @@
   }
 
   /* ---------- Navigation targets ---------- */
-  function utils() { return ['art', 'apps', 'settings']; }
+  function utils() { return ['art', 'inputs', 'apps', 'settings']; }
   /* prev/next run along the apps; out goes to the controls, inn comes back (or to a per-app action). */
   function axes() {
     var v = S.c.layout === 'list';
@@ -543,6 +542,7 @@
   }
   function utilAction(u) {
     if (u === 'art') perform('Art Mode', FrameDevice.art);
+    else if (u === 'inputs') openInputs(true);
     else if (u === 'apps') openApps();
     else openSettings();
   }
@@ -966,7 +966,7 @@
     else if (parts[1] === 'toggle' && TOGGLE_HINTS.hasOwnProperty(parts[2])) { var patch = {}; patch[parts[2]] = !W.config()[parts[2]]; W.configure(patch); }
   }
   function detailRows(t) {
-    var rows = [[{ action: 'settings.back', label: t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'Samsung' : 'Settings' }]];
+    var rows = [[{ action: 'settings.back', label: backLabel(t) }]];
     detailSections(t).forEach(function (section) {
       var enabled = section.items.filter(function (item) { return !item.disabled; });
       if (section.horizontal && enabled.length) rows.push(enabled);
@@ -1001,9 +1001,11 @@
       t.loading = false; t.inputs = list || []; t.inputError = err ? err.message : null; after();
     });
   }
-  function openInputs() {
-    openAppearance('inputs'); var t = top(); t.inputs = []; loadInputs(t);
+  /* Inputs opens from Settings > Samsung or straight from the Home quick controls; Back returns to where it came from. */
+  function openInputs(fromHome) {
+    openAppearance('inputs'); var t = top(); t.inputs = []; t.fromHome = !!fromHome; loadInputs(t);
   }
+  function backLabel(t) { return t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? (t.fromHome ? 'Home' : 'Samsung') : 'Settings'; }
   function detailBack() { cancelLook(); S.err = null; pop(); FrameDevice.cancelSource(); }
   function detailOk(t, item) {
     var patch = {}, error = S.lookError;
@@ -1501,7 +1503,7 @@
         + ' data-z="detail" data-i="0" data-id="' + item.action + '" data-action="' + item.action + '">' + inner
         + (radio ? '<span class="setting-tick" aria-hidden="true">' + (applied ? icon('check') : '') + '</span>' : '') + '</button>';
     }
-    setHTML(appearanceBack, command({ action: 'settings.back', label: t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'Samsung' : 'Settings' }, icon('left') + '<span>' + (t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'Samsung' : 'Settings') + '</span>', 'setting-back'));
+    setHTML(appearanceBack, command({ action: 'settings.back', label: backLabel(t) }, icon('left') + '<span>' + (backLabel(t)) + '</span>', 'setting-back'));
     setHTML(appearanceRows, detailSections(t).map(function (section) {
       return '<section class="setting-section' + (section.horizontal ? ' is-horizontal' : '') + ' section-' + section.id + '">'
         + (section.title ? '<h3 class="setting-label" id="setting-' + section.id + '">' + section.title + '</h3>' : '')
@@ -1525,7 +1527,7 @@
         + command({ action: 'settings.retry', label: 'Try again' }, '<span>Try again</span>', 'setting-retry');
     }
     setHTML(appearanceStatus, status);
-    hint = selected.disabled ? '' : selected.toggle ? (selected.applied ? 'Turn off ' : 'Turn on ') + selected.hint : selected.hint ? selected.hint : selected.action === 'settings.back' ? 'Return to ' + (t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'Samsung' : 'Settings') : selected.action === 'settings.retry' ? 'Retry this change' : selected.axis || selected.radio ? 'Apply selected setting' : selected.action === 'background.wallpaper' ? 'Choose a wallpaper' : selected.action === 'background.rotation' ? 'Choose a rotation interval' : 'Open on the TV';
+    hint = selected.disabled ? '' : selected.toggle ? (selected.applied ? 'Turn off ' : 'Turn on ') + selected.hint : selected.hint ? selected.hint : selected.action === 'settings.back' ? 'Return to ' + (backLabel(t)) : selected.action === 'settings.retry' ? 'Retry this change' : selected.axis || selected.radio ? 'Apply selected setting' : selected.action === 'background.wallpaper' ? 'Choose a wallpaper' : selected.action === 'background.rotation' ? 'Choose a rotation interval' : 'Open on the TV';
     setHTML(appearanceDesc, hint ? '<span class="remote-key">OK</span><span>' + esc(hint) + '</span>' : '');
   }
   /* A detail page taller than the space above the remote hint scrolls so the focused choice and its
