@@ -18,7 +18,7 @@
   ];
   /* Umm al-Qura: Fajr 18.5°, Isha 90 minutes after Maghrib (120 in Ramadan), Asr shadow factor 1. */
   /* Taif is the default: IP lookups in Saudi Arabia often name Jeddah, Makkah or Riyadh instead. Automatic stays a choice. */
-  var DEFAULTS = { place: 'taif', hours: 12, fajr: 18.5, ishaMin: 90, asr: 1, weather: true, prayer: true, radar: true, dock: 'standard', care: true };
+  var DEFAULTS = { place: 'taif', hours: 12, fajr: 18.5, ishaMin: 90, asr: 1, weather: true, prayer: true, radar: true, dock: 'standard', care: true, dim: 'off' };
   var VERSION = 3, RADAR_HOST = 'https://tilecache.rainviewer.com';
   var NAMES = [['fajr', 'Fajr'], ['sunrise', 'Sunrise'], ['dhuhr', 'Dhuhr'], ['asr', 'Asr'], ['maghrib', 'Maghrib'], ['isha', 'Isha']];
   var SHOWN = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
@@ -42,6 +42,7 @@
     if (c.place !== 'auto' && !place(c.place)) c.place = 'auto';
     if (c.hours !== 12 && c.hours !== 24) c.hours = 12;
     if (c.dock !== 'lower') c.dock = 'standard';
+    if (c.dim !== 'soft' && c.dim !== 'strong') c.dim = 'off';
     // Saves from before Taif became the default move to Taif once; choosing Automatic again sticks.
     if ((s.version || 0) < VERSION && from.place === 'auto') c.place = 'taif';
     return c;

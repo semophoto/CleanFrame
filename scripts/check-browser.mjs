@@ -1201,6 +1201,23 @@ try {
     await current.waitForTimeout(400);
     check('Screen care can be turned off', !(await current.evaluate(() => document.getElementById('stage').classList.contains('is-idle'))) && (await current.evaluate(() => CleanFrameWidgets.config().care)) === false);
   });
+  await run('Darken photo', async () => {
+    await page();
+    await look({ bg: 'photo' }); await group('background'); await act('widgets.dim.strong'); await scene('home');
+    const dark = await current.evaluate(() => {
+      const st = document.getElementById('stage'), layers = [...document.querySelectorAll('.wall-dim')];
+      return { cls: st.className, shown: layers.filter(e => getComputedStyle(e).display !== 'none').length, total: layers.length,
+        opacity: getComputedStyle(document.querySelector('#bg .wall-dim')).opacity, saved: JSON.parse(localStorage.getItem('cleanframe.widgets.v1')).config.dim };
+    });
+    check('Strong darkening covers the photo and every glass field', dark.total === 5 && dark.shown === 5 && Math.abs(Number(dark.opacity) - .5) < .01, dark);
+    check('Darkened photo uses light text and is saved', /\bdim-strong\b/.test(dark.cls) && /\btone-dark\b/.test(dark.cls) && !/has-adaptive-ink/.test(dark.cls) && dark.saved === 'strong', dark);
+    await current.reload(); await ready();
+    check('Darkening survives a restart', await current.evaluate(() => document.getElementById('stage').classList.contains('dim-strong')));
+    await look({ bg: 'dark' });
+    check('Flat backgrounds ignore darkening', await current.evaluate(() => [...document.querySelectorAll('.wall-dim')].every(e => getComputedStyle(e).display === 'none')));
+    await look({ bg: 'photo' }); await group('background'); await act('widgets.dim.off'); await scene('home');
+    check('Off removes darkening', await current.evaluate(() => !/\bdim-/.test(document.getElementById('stage').className)));
+  });
   await run('HDMI inputs on the dock', async () => {
     await page({ sources: [1, 2] });
     await current.waitForFunction(() => ShoreQA.state().dock.includes('hdmi2'));
