@@ -23,7 +23,7 @@
     { id: 'hdmi4', name: 'HDMI 4', mark: true, brand: 'hdmi', appId: 'hdmi4', action: 'hdmi', port: 4 }
   ];
   /* New installations start with the apps; connected HDMI ports join Home once they are detected. */
-  var DEFAULT_HOME = ['nuvio', 'tizentube', 'art'], SOURCES_KEY = 'cleanframe.sources.v1', DOCK_LOWER = 80;
+  var DEFAULT_HOME = ['nuvio', 'tizentube', 'art'], SOURCES_KEY = 'cleanframe.sources.v1', DOCK_LOWER = 80, lastSources = 0;
   var PRIMARY = PRIMARY_APPS.map(function (a) { return a.id; }), APPS = PRIMARY_APPS.slice(), ALPHA = [];
   var WALLS = window.CleanFrameWallpapers || [{ id: 'misty', name: 'Misty coast', tone: 'light', ut: { tr: 'mist', br: 'mist' }, frostVeil: .20 }];
   var ADAPTIVE_INK = window.CleanFrameAdaptiveInk || {};
@@ -34,7 +34,7 @@
     { id: '60', name: 'Every hour', min: 60 }
   ];
   var KEY = 'cleanframe.home.v1', storageOk = true, catalog = { loading: false, loaded: false, error: null, request: 0, revision: 0 };
-  var QA = window.ShoreQA = { minuteMs: window.ShoreQA && window.ShoreQA.minuteMs || 60000 };
+  var QA = window.ShoreQA = { minuteMs: window.ShoreQA && window.ShoreQA.minuteMs || 60000, idleMinuteMs: window.ShoreQA && window.ShoreQA.idleMinuteMs || 0 };
   var FONTS = {
     manrope: { name: 'Manrope', family: 'Manrope', display: 600, ui: 500, clock: 500 },
     montreal: { name: 'Neue Montreal', family: 'Study Montreal', display: 300, ui: 400, clock: 300 },
@@ -389,7 +389,9 @@
     return true;
   }
   function errText() {
-    return 'Couldn’t save. Nothing changed.';
+    // Name what failed to save when the write gave a label, so a storage problem is traceable.
+    var label = typeof S.err === 'string' && S.err ? S.err.charAt(0).toLowerCase() + S.err.slice(1) : '';
+    return label ? 'Couldn’t save ' + label + '. Nothing changed.' : 'Couldn’t save. Nothing changed.';
   }
   function statusHtml(def) {
     if (S.err) return '<span class="warn error-chip">' + esc(errText()) + '</span>';
@@ -481,6 +483,7 @@
     FrameDevice.videoSources(function (err, list) {
       var h = S.c.home.slice(), added = [], recent = S.c.recent, i;
       if (err || !list) return;
+      lastSources = Date.now();
       list.forEach(function (s) {
         var id = 'hdmi' + s.port;
         if (s.label && app(id)) app(id).name = s.label;
@@ -934,12 +937,19 @@
         description: at.source === 'auto' ? (at.method === 'device' ? 'Detected: ' : 'From your internet provider: ') + at.city : at.source === 'fallback' ? 'Using ' + at.city + ' until detected' : 'Find from this TV’s network' }] },
       { id: 'cities', title: 'Or choose a city', horizontal: true, items: cities.slice(0, 4) },
       { id: 'cities-more', title: '', horizontal: true, items: cities.slice(4) },
-      { id: 'radar', title: 'Rain radar when rain is nearby', horizontal: true, items: [
-        { action: 'widgets.radar.on', label: 'On', radio: true, applied: c.radar },
-        { action: 'widgets.radar.off', label: 'Off', radio: true, applied: !c.radar }] }
+      onOff('weather', 'Weather', c.weather),
+      onOff('prayer', 'Prayer times', c.prayer),
+      onOff('radar', 'Rain radar when rain is nearby', c.radar),
+      onOff('care', 'Screen care: dim and shift Home when idle', c.care)
     ];
+    function onOff(id, title, on) {
+      return { id: id, title: title, horizontal: true, items: [
+        { action: 'widgets.' + id + '.on', label: 'On', radio: true, applied: on },
+        { action: 'widgets.' + id + '.off', label: 'Off', radio: true, applied: !on }] };
+    }
   }
-  function dockPosition() { var W = window.CleanFrameWidgets; return W && W.config().dock === 'lower' ? 'lower' : 'standard'; }
+  function widgetValue(k) { var W = window.CleanFrameWidgets; return W ? W.value ? W.value(k) : W.config()[k] : undefined; }
+  function dockPosition() { return widgetValue('dock') === 'lower' ? 'lower' : 'standard'; }
   function widgetChoice(action) {
     var parts = action.split('.'), W = window.CleanFrameWidgets;
     if (!W) return;
@@ -947,6 +957,7 @@
     else if (parts[1] === 'place') W.configure({ place: parts[2] });
     else if (parts[1] === 'radar') W.configure({ radar: parts[2] === 'on' });
     else if (parts[1] === 'dock') W.configure({ dock: parts[2] });
+    else if (parts[1] === 'weather' || parts[1] === 'prayer' || parts[1] === 'care') { var patch = {}; patch[parts[1]] = parts[2] === 'on'; W.configure(patch); }
   }
   function detailRows(t) {
     var rows = [[{ action: 'settings.back', label: t.group === 'rotation' ? 'Background' : 'Settings' }]];
@@ -1042,13 +1053,14 @@
   /* ---------- Dispatch ---------- */
   function norm() { var t = top(), v = V[t.id]; if (v.norm) v.norm(t); }
   function press(k) {
-    if (S.source) { if (k === 'back') { exitSource(); after(); } return; }
+    if (S.source) { if (k === 'back') { exitSource(); after(); scheduleIdle(); } return; }
     norm();
     var t = top();
     V[t.id].key(t, k);
     norm();
     render();
     syncRotation();
+    scheduleIdle();
   }
 
   /* ---------- Rendering ---------- */
@@ -1095,7 +1107,7 @@
   function render() {
     var t = top(), sheet = !!V[t.id].sheet, shown = wall(S.shown ? S.shown.wall : S.c.wall), palette = ADAPTIVE_INK[shown.id];
     var adaptive = applyAdaptiveInk(palette), tr = adaptive && palette.tr ? palette.tr.pol : shown.ut.tr, br = adaptive && palette.br ? palette.br.pol : shown.ut.br;
-    stage.className = 'stage bg-' + S.c.bg + ' l-' + S.c.layout + (dockPosition() === 'lower' ? ' dock-lower' : '') + ' v-' + S.variant + ' m-' + (materialApplies() ? S.c.material : 'none') + ' f-' + S.c.focus + ' a-' + S.c.apps + ' u-' + S.c.controls + ' g-' + S.geom + ' tone-' + shown.tone + ' tr-' + tr + ' br-' + br + wallClasses(shown) + inkRungClasses(palette, adaptive) + ' at-' + t.id + ' font-' + homeFont() + (homeFont() !== 'manrope' ? ' font-custom' : '') + (S.fontSwitch ? ' is-font-switch' : '') + (adaptive ? ' has-adaptive-ink adaptive-tl-' + palette.tl.pol : '') + (!adaptive && shown.clockInk ? ' has-clock-ink' : '') + (!adaptive && shown.dockClockInk ? ' has-dock-clock-ink' : '') + (registeredMaterial(shown.id) ? ' registered-material' : '') + (sheet ? ' is-sheet' : '') + (S.reflow ? ' is-reflow' : '');
+    stage.className = 'stage bg-' + S.c.bg + ' l-' + S.c.layout + (dockPosition() === 'lower' ? ' dock-lower' : '') + ' v-' + S.variant + ' m-' + (materialApplies() ? S.c.material : 'none') + ' f-' + S.c.focus + ' a-' + S.c.apps + ' u-' + S.c.controls + ' g-' + S.geom + ' tone-' + shown.tone + ' tr-' + tr + ' br-' + br + wallClasses(shown) + inkRungClasses(palette, adaptive) + ' at-' + t.id + ' font-' + homeFont() + (homeFont() !== 'manrope' ? ' font-custom' : '') + (S.fontSwitch ? ' is-font-switch' : '') + (adaptive ? ' has-adaptive-ink adaptive-tl-' + palette.tl.pol : '') + (!adaptive && shown.clockInk ? ' has-clock-ink' : '') + (!adaptive && shown.dockClockInk ? ' has-dock-clock-ink' : '') + (registeredMaterial(shown.id) ? ' registered-material' : '') + (sheet ? ' is-sheet' : '') + (S.reflow ? ' is-reflow' : '') + idleClasses();
     if (!adaptive && shown.clockInk) stage.style.setProperty('--clock-ink', shown.clockInk);
     else stage.style.removeProperty('--clock-ink');
     if (!adaptive && shown.dockClockInk) stage.style.setProperty('--dock-clock-ink', shown.dockClockInk);
@@ -1154,10 +1166,14 @@
   }
 
   /* Rain radar panel: shown only while rain is nearby; tiles are positioned once per frame and never animated. */
+  var shownRadar;
   function renderRadar(r) {
+    // widgets.js returns the same object until the radar changes, so key presses skip rebuilding it.
+    if (r === shownRadar) return;
+    shownRadar = r;
     if (!r) { radarEl.className = 'radar'; setHTML(radarEl, ''); return; }
     radarEl.className = 'radar is-on';
-    setHTML(radarEl, '<div class="radar-head"><span class="radar-title">Rain nearby</span><span class="radar-time">Radar ' + esc(r.time) + '</span></div>'
+    setHTML(radarEl, '<div class="radar-head"><span class="radar-title">' + (r.snow ? 'Snow nearby' : 'Rain nearby') + '</span><span class="radar-time">Radar ' + esc(r.time) + '</span></div>'
       + '<div class="radar-map" style="width:' + r.width + 'px;height:' + r.height + 'px">'
       + r.tiles.map(function (t) { return '<img class="radar-base" alt="" src="' + esc(t.base) + '" style="left:' + t.left + 'px;top:' + t.top + 'px">'; }).join('')
       + r.tiles.map(function (t) { return '<img class="radar-rain" alt="" src="' + esc(t.rain) + '" style="left:' + t.left + 'px;top:' + t.top + 'px">'; }).join('')
@@ -1817,11 +1833,58 @@
       if (rotationActive()) setLook({ wall: WALLS[(wallIndex(S.c.wall) + 1) % WALLS.length].id }, { row: 'bg' });
     }, Math.max(10, mode().min * QA.minuteMs - activeMs));
   }
-  function updateClock() {
+  /* The clock checks every 10 seconds but redraws only when the minute changes. A one-minute timer
+     paused by TV standby would otherwise show the old time for up to a minute after the TV wakes. */
+  var clockMinute = -1;
+  function updateClock() { clockMinute = -1; clockTick(); }
+  function clockTick() {
+    var minute;
     clearTimeout(clockTimer);
     if (document.hidden) return;
-    if (top().id === 'home' || isSettingsDetail(top())) renderCaption(top(), homeState(top()));
-    clockTimer = setTimeout(updateClock, 60000 - (Date.now() % 60000) + 30);
+    minute = Math.floor(Date.now() / 60000);
+    if (minute !== clockMinute) {
+      clockMinute = minute;
+      if (top().id === 'home' || isSettingsDetail(top())) renderCaption(top(), homeState(top()));
+    }
+    clockTimer = setTimeout(clockTick, Math.min(10000, 60000 - (Date.now() % 60000) + 30));
+  }
+
+  /* ---------- OLED screen care ---------- */
+  /* Home can sit unchanged for hours on an OLED. After 3 idle minutes the interface dims and the whole
+     scene drifts a few pixels every 4 minutes; after 15 minutes it fades further. Any key or click wakes
+     it at once. The key that wakes a faded screen does nothing else, so a dark screen never launches an app. */
+  var IDLE_DIM = 3, IDLE_SHIFT = 4, IDLE_FADE = 15;
+  var IDLE_STEPS = [[0, 0], [-6, -4], [5, -5], [6, 4], [-4, 6], [0, -6], [-6, 2], [4, 1]];
+  var idle = { level: 0, step: 0, timer: 0, at: Date.now() };
+  function idleMinutes(n) { return n * (QA.idleMinuteMs || 60000); }
+  function idleClasses() { return idle.level ? ' is-idle' + (idle.level > 1 ? ' is-deep-idle' : '') : ''; }
+  function idleAllowed() { return !document.hidden && !S.source && top().id === 'home' && widgetValue('care') !== false; }
+  function applyIdle() {
+    var step = IDLE_STEPS[idle.step];
+    stage.style.setProperty('--idle-x', step[0] + 'px');
+    stage.style.setProperty('--idle-y', step[1] + 'px');
+    stage.className = stage.className.replace(/\s+is-(?:deep-)?idle/g, '') + idleClasses();
+  }
+  function scheduleIdle() {
+    clearTimeout(idle.timer); idle.timer = 0;
+    if (!idleAllowed()) return;
+    var wait = idle.level ? idleMinutes(IDLE_SHIFT) : idleMinutes(IDLE_DIM) - (Date.now() - idle.at);
+    idle.timer = setTimeout(idleTick, Math.max(50, wait));
+  }
+  function idleTick() {
+    idle.timer = 0;
+    if (!idleAllowed()) { wake(); return; }
+    idle.level = Date.now() - idle.at >= idleMinutes(IDLE_FADE) - 50 ? 2 : 1;
+    idle.step = (idle.step + 1) % IDLE_STEPS.length || 1;
+    applyIdle(); scheduleIdle();
+  }
+  /* Returns true when the input only woke a faded screen and should do nothing else. */
+  function wake() {
+    var was = idle.level;
+    idle.at = Date.now();
+    if (was) { idle.level = 0; idle.step = 0; applyIdle(); }
+    scheduleIdle();
+    return was > 1;
   }
   function focusStage() { try { stage.focus({ preventScroll: true }); } catch (e) { stage.focus(); } }
   function after() { norm(); render(); syncRotation(); }
@@ -1862,6 +1925,7 @@
     norm();
     render();
     syncRotation();
+    scheduleIdle();
   }
 
   utilsEl.addEventListener('mouseover', function (ev) {
@@ -1880,25 +1944,26 @@
     var el = ev.target;
     while (el && el !== stage && !(el.getAttribute && el.getAttribute('data-z'))) el = el.parentNode;
     focusStage();
-    if (!el || el === stage) return;
+    if (wake() || !el || el === stage) return;
     pointAt(el);
   });
   var heldKeys = {};
   document.addEventListener('keydown', function (ev) {
-    var code = ev.keyCode, k = KEYS[code];
+    var code = ev.keyCode, k = KEYS[code], faded = wake();
     if (code === 9) { ev.preventDefault(); return; }
     if (!k || ev.metaKey || ev.ctrlKey || ev.altKey) return;
     ev.preventDefault();
     if (k === 'ok' || k === 'back') { if (ev.repeat || heldKeys[code]) return; heldKeys[code] = true; }
+    if (faded) return;
     press(k);
   });
   document.addEventListener('keyup', function (ev) { delete heldKeys[ev.keyCode]; });
   window.addEventListener('blur', function () { heldKeys = {}; });
-  window.addEventListener('focus', function () { release(); focusStage(); after(); updateClock(); });
+  window.addEventListener('focus', function () { release(); wake(); focusStage(); after(); updateClock(); });
   document.addEventListener('visibilitychange', function () {
     heldKeys = {};
-    if (document.hidden) { exitSource(); pauseRotation(); clearTimeout(clockTimer); }
-    else { release(); after(); updateClock(); focusStage(); }
+    if (document.hidden) { exitSource(); pauseRotation(); clearTimeout(clockTimer); clearTimeout(idle.timer); }
+    else { release(); wake(); after(); updateClock(); focusStage(); if (Date.now() - lastSources > 60000) seedSources(); }
   });
   window.addEventListener('resize', fit);
 
@@ -1937,7 +2002,7 @@
   initialise();
   if (window.CleanFrameWidgets) window.CleanFrameWidgets.onChange(function () { if (top().id === 'home' || isSettingsDetail(top())) renderCaption(top(), homeState(top())); });
   setLook({}, { transient: true, startup: true });
-  norm(); render(); fit(); focusStage(); updateClock(); syncRotation();
+  norm(); render(); fit(); focusStage(); updateClock(); syncRotation(); scheduleIdle();
   seedSources();
   // A remote button may relaunch CleanFrame asking for an HDMI input. The launch data persists for
   // the life of the app, so remember what was already opened: a focus change must not re-open (or

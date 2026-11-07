@@ -49,13 +49,14 @@ async function run(name, fn) {
 async function closePage() { if (current) { current.__closing = true; await current.close(); current = null; } }
 
 // Production still calls its unmodified device.js adapter.
-function installHarness({ seed, legacy, mock, catalog, minuteMs, catalogFailure, noFontAPI, storageFailure, sources }) {
+function installHarness({ seed, legacy, mock, catalog, minuteMs, idleMinuteMs, widgets, catalogFailure, noFontAPI, storageFailure, sources }) {
   if (!sessionStorage.getItem('__cleanframe_seeded')) {
     if (seed !== undefined) localStorage.setItem('cleanframe.home.v1', typeof seed === 'string' ? seed : JSON.stringify(seed));
     if (legacy !== undefined) localStorage.setItem('cleanframe.shore.v1', typeof legacy === 'string' ? legacy : JSON.stringify(legacy));
+    if (widgets !== undefined) localStorage.setItem('cleanframe.widgets.v1', JSON.stringify(widgets));
     sessionStorage.setItem('__cleanframe_seeded', '1');
   }
-  window.ShoreQA = { minuteMs };
+  window.ShoreQA = { minuteMs, idleMinuteMs };
   window.__failWrites = !!storageFailure;
   window.__storageAttempts = 0;
   const set = Storage.prototype.setItem;
@@ -878,6 +879,14 @@ try {
   await run('Home widgets', async () => {
     await page();
     await current.waitForFunction(() => document.querySelector('#caption .w-weather'));
+    check('New installations use Taif, not the internet provider city', (await current.evaluate(() => CleanFrameWidgets.config().place)) === 'taif' && /Taif/.test(await current.locator('#caption .w-weather').textContent()));
+    const migrated = await current.evaluate(() => { localStorage.setItem('cleanframe.widgets.v1', JSON.stringify({ version: 2, config: { place: 'auto' } })); return true; });
+    await current.reload(); await ready();
+    check('Older saves on Automatic move to Taif once', migrated && (await current.evaluate(() => CleanFrameWidgets.config().place)) === 'taif');
+    await current.evaluate(() => CleanFrameWidgets.configure({ place: 'auto' }));
+    await current.reload(); await ready();
+    check('Choosing Automatic again is kept', (await current.evaluate(() => CleanFrameWidgets.config().place)) === 'auto');
+    await current.waitForFunction(() => /Jeddah/.test(document.querySelector('#caption .w-weather')?.textContent || ''));
     const w = await current.evaluate(() => {
       const cap = document.getElementById('caption');
       return { weather: cap.querySelector('.w-weather').textContent, prayers: [...cap.querySelectorAll('.w-prayer .w-name')].map(e => e.textContent),
@@ -905,6 +914,23 @@ try {
     const riyadh = await current.evaluate(() => { const t = CleanFrameWidgets.prayerTimes(new Date(2026, 9, 24), { lat: 24.7136, lng: 46.6753 }); return ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].map(k => t[k].getUTCHours() * 60 + t[k].getUTCMinutes()); });
     const expected = [97, 518, 713, 859, 949]; // 04:37, 11:38, 14:53, 17:19, 18:49 Riyadh (UTC+3) as UTC minutes
     check('Riyadh Umm al-Qura times stay within two minutes', riyadh.every((m, i) => Math.abs(m - expected[i]) <= 2), riyadh);
+  });
+  await run('OLED screen care', async () => {
+    // One idle "minute" is 40 ms here: dim after 120 ms, drift every 160 ms, fade after 600 ms.
+    await page({ idleMinuteMs: 40 });
+    await current.waitForFunction(() => document.getElementById('stage').classList.contains('is-idle'));
+    const drift = await current.evaluate(() => getComputedStyle(document.getElementById('stage')).getPropertyValue('--idle-x').trim());
+    check('Idle Home dims and drifts', /^-?\d+px$/.test(drift), drift);
+    await current.waitForFunction(() => document.getElementById('stage').classList.contains('is-deep-idle'));
+    const before = (await state()).focusAction;
+    await current.keyboard.press('ArrowRight');
+    const woke = await current.evaluate(() => document.getElementById('stage').className);
+    check('The key that wakes a faded screen only wakes it', !/is-idle/.test(woke) && (await state()).focusAction === before, { woke, before });
+    await current.keyboard.press('ArrowRight');
+    check('The next key works as usual', (await state()).focusAction !== before);
+    await group('widgets'); await act('widgets.care.off'); await scene('home');
+    await current.waitForTimeout(400);
+    check('Screen care can be turned off', !(await current.evaluate(() => document.getElementById('stage').classList.contains('is-idle'))) && (await current.evaluate(() => CleanFrameWidgets.config().care)) === false);
   });
   await run('HDMI inputs on the dock', async () => {
     await page({ sources: [1, 2] });

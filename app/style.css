@@ -573,3 +573,9 @@ html.is-source .stage{visibility:hidden}
 .detail-widgets .setting-label{margin-bottom:8px}
 .detail-widgets .is-horizontal .setting-choice{min-height:68px;font-size:32px}
 .detail-widgets .setting-choice{min-height:72px}
+/* OLED screen care (main.js): dim after idle minutes, drift the whole scene a few pixels, fade further later.
+   Only opacity and transform change, so the TV composites it without repainting. Waking snaps back instantly. */
+.stage.is-idle .scene{transform:translate3d(var(--idle-x,0),var(--idle-y,0),0) scale(1.012);transition:transform 3s ease}
+.stage.is-idle .home{opacity:.5;transition:opacity 2s ease}
+.stage.is-deep-idle .home{opacity:.16;transition:opacity 4s ease}
+.stage.is-deep-idle .bg{opacity:.55;transition:opacity 4s ease}
