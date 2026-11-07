@@ -1,0 +1,10 @@
+[
+  {"id":"hegra-tomb","file":"madain-saleh.jpg","name":"Hegra tomb","author":"Ahmad AlHasanat","license":"CC BY-SA 4.0","source":"https://commons.wikimedia.org/wiki/File:Mada%27in_Saleh_2017.jpg","tone":"light","focus":"50% 45%"},
+  {"id":"alula-canyon","file":"alula-sammy.jpg","name":"AlUla canyon","author":"Sammy Six","license":"CC BY 2.0","source":"https://commons.wikimedia.org/wiki/File:Al_Ula_(6708183213).jpg","tone":"dark","focus":"50% 50%"},
+  {"id":"empty-quarter","file":"empty-quarter-3.jpg","name":"Empty Quarter","author":"Richard Mortel","license":"CC BY 2.0","source":"https://commons.wikimedia.org/wiki/File:Saudi_Arabia_Empty_Quarter_Nov._2021_(3).jpg","tone":"light","focus":"50% 70%"},
+  {"id":"taif-mountains","file":"alhada-road-3.jpg","name":"Taif mountains","author":"Richard Mortel","license":"CC BY 2.0","source":"https://commons.wikimedia.org/wiki/File:Al-Hada_mountain_road,_al-Taif,_Saudi_Arabia_(3).jpg","tone":"light","focus":"50% 60%"},
+  {"id":"maysan-fort","file":"maysan-fort.jpg","name":"Maysan fort","author":"Fawaz alsharif","license":"CC BY-SA 4.0","source":"https://commons.wikimedia.org/wiki/File:One_of_the_fortresses_of_the_village_of_Maysan_south_of_Taif.jpg","tone":"dark","focus":"50% 0%"},
+  {"id":"rijal-almaa","file":"rijal-almaa.jpg","name":"Rijal Almaa","author":"Richard Mortel","license":"CC BY 2.0","source":"https://commons.wikimedia.org/wiki/File:Rijal_Almaa_village_2021.jpg","tone":"light","focus":"50% 35%"},
+  {"id":"riyadh-sunset","file":"riyadh-kafd.jpg","name":"Riyadh sunset","author":"B.alotaby","license":"CC BY-SA 4.0","source":"https://commons.wikimedia.org/wiki/File:Riyadh_Skyline_showing_the_King_Abdullah_Financial_District_(KAFD)_and_the_famous_Kingdom_Tower_.jpg","tone":"light","focus":"50% 45%"},
+  {"id":"riyadh-moon","file":"riyadh-moon.jpg","name":"Riyadh moonrise","author":"Saudi Press Agency","license":"CC BY-SA 4.0","source":"https://commons.wikimedia.org/wiki/File:King_Abdullah_Financial_District_(KAFD),_Riyadh,_Saudi_Arabia,_2026.jpg","tone":"dark","focus":"50% 0%"}
+]

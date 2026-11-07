@@ -20,6 +20,21 @@ Reviewed on 20 October 2026. Each of the fifteen linked Unsplash photo pages dis
 | Mint wave | MagicPattern | [Photo page](https://unsplash.com/photos/87PP9Zd7MNo) |
 | Alpine glow | Cristina Gottardi | [Photo page](https://unsplash.com/photos/CSpjU6hYo_0) |
 
+### Saudi Arabia (Wikimedia Commons)
+
+These eight photos come from Wikimedia Commons under the Creative Commons licences shown. They were cropped to 1920 x 1080 and resized; the derived backgrounds, thumbnails and material images keep the same licence and credit. CC BY-SA derivatives are shared under CC BY-SA.
+
+| Wallpaper | Photographer | Licence | Source |
+| --- | --- | --- | --- |
+| Hegra tomb | Ahmad AlHasanat | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) | [File page](https://commons.wikimedia.org/wiki/File:Mada%27in_Saleh_2017.jpg) |
+| AlUla canyon | Sammy Six | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [File page](https://commons.wikimedia.org/wiki/File:Al_Ula_(6708183213).jpg) |
+| Empty Quarter | Richard Mortel | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [File page](https://commons.wikimedia.org/wiki/File:Saudi_Arabia_Empty_Quarter_Nov._2021_(3).jpg) |
+| Taif mountains | Richard Mortel | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [File page](https://commons.wikimedia.org/wiki/File:Al-Hada_mountain_road,_al-Taif,_Saudi_Arabia_(3).jpg) |
+| Maysan fort | Fawaz alsharif | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) | [File page](https://commons.wikimedia.org/wiki/File:One_of_the_fortresses_of_the_village_of_Maysan_south_of_Taif.jpg) |
+| Rijal Almaa | Richard Mortel | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [File page](https://commons.wikimedia.org/wiki/File:Rijal_Almaa_village_2021.jpg) |
+| Riyadh sunset | B.alotaby | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) | [File page](https://commons.wikimedia.org/wiki/File:Riyadh_Skyline_showing_the_King_Abdullah_Financial_District_(KAFD)_and_the_famous_Kingdom_Tower_.jpg) |
+| Riyadh moonrise | Saudi Press Agency | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) | [File page](https://commons.wikimedia.org/wiki/File:King_Abdullah_Financial_District_(KAFD),_Riyadh,_Saudi_Arabia,_2026.jpg) |
+
 The background preparation and material rendering steps are described in [asset generation](assets.md). Full-size original photos and research studies are outside the public source.
 
 ## Fonts and icons

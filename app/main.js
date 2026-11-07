@@ -907,6 +907,11 @@
     if (t.group === 'background') return [
       { id: 'bg', title: 'Background type', items: options('bg', ['photo', 'light', 'dark']) },
       { id: 'wall', title: 'Wallpaper', items: [{ action: 'background.wallpaper', label: wall(S.c.wall).name, thumbnail: true, disabled: flat }] },
+      // Darkens any photo, including bright ones, behind Home and inside every glass surface.
+      { id: 'dim', title: 'Darken photo', horizontal: true, items: [['off', 'Off'], ['soft', 'Light'], ['strong', 'Strong']].map(function (v) {
+        return { action: 'widgets.dim.' + v[0], label: v[1], radio: true, applied: photoDim() === v[0], disabled: flat,
+          hint: v[0] === 'off' ? 'Show the photo as it is' : v[0] === 'soft' ? 'Darken the photo a little' : 'Darken the photo a lot' };
+      }) },
       { id: 'rotation', title: 'Rotation', items: [{ action: 'background.rotation', label: mode().name, disabled: flat }], reason: flat ? 'Choose Photo to use wallpaper and rotation.' : '' }
     ];
     if (t.group === 'layout') return [
@@ -955,6 +960,13 @@
   }
   function widgetValue(k) { var W = window.CleanFrameWidgets; return W ? W.value ? W.value(k) : W.config()[k] : undefined; }
   var TOGGLE_HINTS = { weather: 'weather', prayer: 'prayer times', radar: 'rain radar', care: 'idle dimming' };
+  function darkened(w) {
+    var d = {}, k;
+    for (k in w) if (w.hasOwnProperty(k)) d[k] = w[k];
+    d.tone = 'dark'; d.ut = { tr: 'mist', br: 'mist' }; d.clockInk = d.dockClockInk = ''; d.clockMist = false;
+    return d;
+  }
+  function photoDim() { var v = widgetValue('dim'); return v === 'soft' || v === 'strong' ? v : 'off'; }
   function dockPosition() { return widgetValue('dock') === 'lower' ? 'lower' : 'standard'; }
   function widgetChoice(action) {
     var parts = action.split('.'), W = window.CleanFrameWidgets;
@@ -963,6 +975,7 @@
     else if (parts[1] === 'place') W.configure({ place: parts[2] });
     else if (parts[1] === 'radar') W.configure({ radar: parts[2] === 'on' });
     else if (parts[1] === 'dock') W.configure({ dock: parts[2] });
+    else if (parts[1] === 'dim') W.configure({ dim: parts[2] });
     else if (parts[1] === 'toggle' && TOGGLE_HINTS.hasOwnProperty(parts[2])) { var patch = {}; patch[parts[2]] = !W.config()[parts[2]]; W.configure(patch); }
   }
   function detailRows(t) {
@@ -1132,8 +1145,11 @@
   }
   function render() {
     var t = top(), sheet = !!V[t.id].sheet, shown = wall(S.shown ? S.shown.wall : S.c.wall), palette = ADAPTIVE_INK[shown.id];
+    // A darkened photo always takes light text: the measured palettes describe the photo before darkening.
+    var dimmed = S.c.bg === 'photo' && photoDim() !== 'off';
+    if (dimmed) { palette = null; shown = darkened(shown); }
     var adaptive = applyAdaptiveInk(palette), tr = adaptive && palette.tr ? palette.tr.pol : shown.ut.tr, br = adaptive && palette.br ? palette.br.pol : shown.ut.br;
-    stage.className = 'stage bg-' + S.c.bg + ' l-' + S.c.layout + (dockPosition() === 'lower' ? ' dock-lower' : '') + ' v-' + S.variant + ' m-' + (materialApplies() ? S.c.material : 'none') + ' f-' + S.c.focus + ' a-' + S.c.apps + ' u-' + S.c.controls + ' g-' + S.geom + ' tone-' + shown.tone + ' tr-' + tr + ' br-' + br + wallClasses(shown) + inkRungClasses(palette, adaptive) + ' at-' + t.id + ' font-' + homeFont() + (homeFont() !== 'manrope' ? ' font-custom' : '') + (S.fontSwitch ? ' is-font-switch' : '') + (adaptive ? ' has-adaptive-ink adaptive-tl-' + palette.tl.pol : '') + (!adaptive && shown.clockInk ? ' has-clock-ink' : '') + (!adaptive && shown.dockClockInk ? ' has-dock-clock-ink' : '') + (registeredMaterial(shown.id) ? ' registered-material' : '') + (sheet ? ' is-sheet' : '') + (S.reflow ? ' is-reflow' : '') + idleClasses();
+    stage.className = 'stage bg-' + S.c.bg + ' l-' + S.c.layout + (dockPosition() === 'lower' ? ' dock-lower' : '') + (photoDim() !== 'off' ? ' dim-' + photoDim() : '') + ' v-' + S.variant + ' m-' + (materialApplies() ? S.c.material : 'none') + ' f-' + S.c.focus + ' a-' + S.c.apps + ' u-' + S.c.controls + ' g-' + S.geom + ' tone-' + shown.tone + ' tr-' + tr + ' br-' + br + wallClasses(shown) + inkRungClasses(palette, adaptive) + ' at-' + t.id + ' font-' + homeFont() + (homeFont() !== 'manrope' ? ' font-custom' : '') + (S.fontSwitch ? ' is-font-switch' : '') + (adaptive ? ' has-adaptive-ink adaptive-tl-' + palette.tl.pol : '') + (!adaptive && shown.clockInk ? ' has-clock-ink' : '') + (!adaptive && shown.dockClockInk ? ' has-dock-clock-ink' : '') + (registeredMaterial(shown.id) ? ' registered-material' : '') + (sheet ? ' is-sheet' : '') + (S.reflow ? ' is-reflow' : '') + idleClasses();
     if (!adaptive && shown.clockInk) stage.style.setProperty('--clock-ink', shown.clockInk);
     else stage.style.removeProperty('--clock-ink');
     if (!adaptive && shown.dockClockInk) stage.style.setProperty('--dock-clock-ink', shown.dockClockInk);

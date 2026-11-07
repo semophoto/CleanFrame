@@ -634,3 +634,13 @@ html.is-source .stage{visibility:hidden}
 .detail-widgets .is-horizontal .setting-choice{flex:1 1 0}
 .detail-widgets .section-cities,.detail-widgets .section-cities-more{margin-top:6px}
 .detail-widgets .section-cities-more .setting-options::after{content:"";flex:1 1 0;margin-left:12px;padding:0 20px}
+/* Darken photo: one flat layer over the photo and over each registered glass field, so glass stays matched. */
+.wall-dim{display:none;position:absolute;left:0;top:0;width:1920px;height:1080px;background:#050403;opacity:0;pointer-events:none}
+.bg-photo.dim-soft .wall-dim,.bg-photo.dim-strong .wall-dim{display:block}
+.bg-photo.dim-soft .wall-dim{opacity:.28}
+.bg-photo.dim-strong .wall-dim{opacity:.5}
+/* Background now holds four sections; slightly tighter rows keep it on one screen. */
+.detail-background .setting-section+.setting-section{margin-top:20px}
+.detail-background .setting-label{margin-bottom:8px}
+.detail-background .setting-options .setting-choice{min-height:72px}
+.detail-background .section-dim .setting-choice{min-height:68px}

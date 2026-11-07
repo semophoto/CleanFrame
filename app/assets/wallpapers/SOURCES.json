@@ -148,5 +148,93 @@
     "tone": "light",
     "credit": "Cristina Gottardi",
     "source": "https://unsplash.com/photos/CSpjU6hYo_0"
+  },
+  {
+    "id": "hegra-tomb",
+    "name": "Hegra tomb",
+    "src": "assets/wallpapers/hegra-tomb.jpg",
+    "thumb": "assets/wallpapers/hegra-tomb-thumb.jpg",
+    "pos": "50% 50%",
+    "tone": "light",
+    "credit": "Ahmad AlHasanat",
+    "source": "https://commons.wikimedia.org/wiki/File:Mada%27in_Saleh_2017.jpg",
+    "license": "CC BY-SA 4.0"
+  },
+  {
+    "id": "alula-canyon",
+    "name": "AlUla canyon",
+    "src": "assets/wallpapers/alula-canyon.jpg",
+    "thumb": "assets/wallpapers/alula-canyon-thumb.jpg",
+    "pos": "50% 50%",
+    "tone": "dark",
+    "credit": "Sammy Six",
+    "source": "https://commons.wikimedia.org/wiki/File:Al_Ula_(6708183213).jpg",
+    "license": "CC BY 2.0"
+  },
+  {
+    "id": "empty-quarter",
+    "name": "Empty Quarter",
+    "src": "assets/wallpapers/empty-quarter.jpg",
+    "thumb": "assets/wallpapers/empty-quarter-thumb.jpg",
+    "pos": "50% 50%",
+    "tone": "light",
+    "credit": "Richard Mortel",
+    "source": "https://commons.wikimedia.org/wiki/File:Saudi_Arabia_Empty_Quarter_Nov._2021_(3).jpg",
+    "license": "CC BY 2.0"
+  },
+  {
+    "id": "taif-mountains",
+    "name": "Taif mountains",
+    "src": "assets/wallpapers/taif-mountains.jpg",
+    "thumb": "assets/wallpapers/taif-mountains-thumb.jpg",
+    "pos": "50% 50%",
+    "tone": "light",
+    "credit": "Richard Mortel",
+    "source": "https://commons.wikimedia.org/wiki/File:Al-Hada_mountain_road,_al-Taif,_Saudi_Arabia_(3).jpg",
+    "license": "CC BY 2.0"
+  },
+  {
+    "id": "maysan-fort",
+    "name": "Maysan fort",
+    "src": "assets/wallpapers/maysan-fort.jpg",
+    "thumb": "assets/wallpapers/maysan-fort-thumb.jpg",
+    "pos": "50% 50%",
+    "tone": "dark",
+    "credit": "Fawaz alsharif",
+    "source": "https://commons.wikimedia.org/wiki/File:One_of_the_fortresses_of_the_village_of_Maysan_south_of_Taif.jpg",
+    "license": "CC BY-SA 4.0"
+  },
+  {
+    "id": "rijal-almaa",
+    "name": "Rijal Almaa",
+    "src": "assets/wallpapers/rijal-almaa.jpg",
+    "thumb": "assets/wallpapers/rijal-almaa-thumb.jpg",
+    "pos": "50% 50%",
+    "tone": "light",
+    "credit": "Richard Mortel",
+    "source": "https://commons.wikimedia.org/wiki/File:Rijal_Almaa_village_2021.jpg",
+    "license": "CC BY 2.0"
+  },
+  {
+    "id": "riyadh-sunset",
+    "name": "Riyadh sunset",
+    "src": "assets/wallpapers/riyadh-sunset.jpg",
+    "thumb": "assets/wallpapers/riyadh-sunset-thumb.jpg",
+    "pos": "50% 50%",
+    "tone": "light",
+    "credit": "B.alotaby",
+    "source": "https://commons.wikimedia.org/wiki/File:Riyadh_Skyline_showing_the_King_Abdullah_Financial_District_(KAFD)_and_the_famous_Kingdom_Tower_.jpg",
+    "license": "CC BY-SA 4.0"
+  },
+  {
+    "id": "riyadh-moon",
+    "name": "Riyadh moonrise",
+    "src": "assets/wallpapers/riyadh-moon.jpg",
+    "thumb": "assets/wallpapers/riyadh-moon-thumb.jpg",
+    "pos": "50% 50%",
+    "tone": "dark",
+    "credit": "Saudi Press Agency",
+    "source": "https://commons.wikimedia.org/wiki/File:King_Abdullah_Financial_District_(KAFD),_Riyadh,_Saudi_Arabia,_2026.jpg",
+    "license": "CC BY-SA 4.0"
   }
 ]
