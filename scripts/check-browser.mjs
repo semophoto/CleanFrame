@@ -430,6 +430,36 @@ try {
       });
       // Seven groups: the six upstream ones plus Clock and widgets.
       check('Settings group arrows stay separate from their copy at ' + width, groups.length === 7 && groups.every(gap => gap >= 31.5), groups);
+      // Nothing on a Settings page may run into the OK hint, and no two choices may overlap.
+      const overview = await current.evaluate(() => {
+        const scale = document.getElementById('stage').getBoundingClientRect().width / 1920;
+        const rows = [...document.querySelectorAll('.settings-group')].map(e => e.getBoundingClientRect());
+        const hint = document.querySelector('.settings-overview-hint').getBoundingClientRect();
+        return (hint.top - Math.max.apply(null, rows.map(r => r.bottom))) / scale;
+      });
+      check('Settings overview rows clear the OK hint at ' + width, overview >= 16, overview);
+      for (const name of ['background', 'layout', 'typography', 'focus', 'widgets', 'samsung']) {
+        await group(name);
+        const page = await current.evaluate(() => {
+          const scale = document.getElementById('stage').getBoundingClientRect().width / 1920;
+          const rows = document.getElementById('appearanceRows'), hint = document.getElementById('appearanceDesc').getBoundingClientRect();
+          const box = rows.getBoundingClientRect();
+          const choices = [...rows.querySelectorAll('.setting-choice')].map(e => ({ t: e.textContent.trim(), r: e.getBoundingClientRect() }))
+            .filter(c => c.r.bottom > box.top && c.r.top < box.bottom);
+          const hits = [];
+          choices.forEach((a, i) => choices.slice(i + 1).forEach(b => {
+            if (a.r.left < b.r.right - 1 && b.r.left < a.r.right - 1 && a.r.top < b.r.bottom - 1 && b.r.top < a.r.bottom - 1) hits.push(a.t + '/' + b.t);
+          }));
+          const focus = rows.querySelector('.setting-choice.is-focus');
+          const fr = focus && focus.getBoundingClientRect();
+          return { clear: (hint.top - Math.min(box.bottom, Math.max.apply(null, choices.map(c => c.r.bottom)))) / scale, hits,
+            focusVisible: !!fr && fr.top >= box.top - 1 && fr.bottom <= box.bottom + 1 };
+        });
+        check(name + ' choices clear the OK hint and each other at ' + width, page.clear >= 16 && page.hits.length === 0 && page.focusVisible, page);
+      }
+      await group('widgets');
+      const opened = await current.evaluate(() => { const f = document.querySelector('#appearanceRows .setting-choice.is-focus'); return f && f.getAttribute('data-action'); });
+      check('Clock and widgets opens on an applied choice at ' + width, /^widgets\.(hours|place)\./.test(opened || ''), opened);
       await wallpaper();
       const caption = await current.locator('.wallpaper-preview-name').evaluate(e => {
         const scale = document.getElementById('stage').getBoundingClientRect().width / 1920;
@@ -1148,7 +1178,7 @@ try {
     const r = await current.evaluate(() => ({ tiles: document.querySelectorAll('#radar .radar-rain').length, bases: document.querySelectorAll('#radar .radar-base').length,
       src: document.querySelector('#radar .radar-rain').getAttribute('src'), focusable: document.querySelectorAll('#radar [data-action], #radar [tabindex]').length }));
     check('Nearby rain shows RainViewer radar over a base map', r.tiles >= 2 && r.tiles === r.bases && r.src.indexOf('https://tilecache.rainviewer.com/v2/radar/qa0000000001/256/7/') === 0 && r.focusable === 0, r);
-    await group('widgets'); await act('widgets.radar.off'); await scene('home');
+    await group('widgets'); await act('widgets.toggle.radar'); await scene('home');
     check('Radar can be turned off', !(await current.evaluate(() => document.querySelector('#radar.is-on'))) && (await current.evaluate(() => CleanFrameWidgets.config().radar)) === false);
     const riyadh = await current.evaluate(() => { const t = CleanFrameWidgets.prayerTimes(new Date(2026, 9, 24), { lat: 24.7136, lng: 46.6753 }); return ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].map(k => t[k].getUTCHours() * 60 + t[k].getUTCMinutes()); });
     const expected = [97, 518, 713, 859, 949]; // 04:37, 11:38, 14:53, 17:19, 18:49 Riyadh (UTC+3) as UTC minutes
@@ -1167,7 +1197,7 @@ try {
     check('The key that wakes a faded screen only wakes it', !/is-idle/.test(woke) && (await state()).focusAction === before, { woke, before });
     await current.keyboard.press('ArrowRight');
     check('The next key works as usual', (await state()).focusAction !== before);
-    await group('widgets'); await act('widgets.care.off'); await scene('home');
+    await group('widgets'); await act('widgets.toggle.care'); await scene('home');
     await current.waitForTimeout(400);
     check('Screen care can be turned off', !(await current.evaluate(() => document.getElementById('stage').classList.contains('is-idle'))) && (await current.evaluate(() => CleanFrameWidgets.config().care)) === false);
   });

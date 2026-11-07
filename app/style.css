@@ -542,12 +542,13 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000}
 .w-weather.is-stale{opacity:.6}
 .w-prayers>*+*{margin-left:26px}
 .w-prayer>*+*{margin-left:8px}
-.w-prayer{display:flex;opacity:.7;font-variant-numeric:tabular-nums}
+.w-prayer{display:flex;opacity:.78;font-variant-numeric:tabular-nums}
 .w-prayer.is-next{opacity:1;font-weight:700}
 .w-next{font-size:22px;line-height:28px;opacity:.72}
 .l-list .cap-widgets{align-items:flex-end}
 .bg-dark .cap-widgets,.bg-light .cap-widgets{color:var(--ink);text-shadow:none}
-.bg-photo.l-list .caption .cap-widgets{color:var(--tr-ink);text-shadow:var(--tr-shadow)}
+/* Photo backgrounds: widgets follow the adaptive top-row ink and shadow in every layout so they stay legible on bright skies. */
+.bg-photo .caption .cap-widgets{color:var(--tr-ink);text-shadow:var(--tr-shadow)}
 /* Rain radar: shown only while rain is nearby. Static tiles; no live filters. */
 .radar{position:absolute;left:140px;top:330px;display:none;padding:16px;border-radius:24px;background:rgba(12,16,20,.62);color:rgba(255,255,255,.92);box-shadow:0 8px 32px rgba(0,0,0,.28)}
 .radar.is-on{display:block}
@@ -571,7 +572,6 @@ html.is-source .stage{visibility:hidden}
 .detail-widgets .setting-section+.setting-section{margin-top:20px}
 .detail-widgets .setting-label{margin-bottom:8px}
 .detail-widgets .is-horizontal .setting-choice{min-height:68px;font-size:32px}
-.detail-widgets .setting-choice{min-height:72px}
 /* OLED screen care (main.js): dim after idle minutes, drift the whole scene a few pixels, fade further later.
    Only opacity and transform change, so the TV composites it without repainting. Waking snaps back instantly. */
 .stage.is-idle .scene{transform:translate3d(var(--idle-x,0),var(--idle-y,0),0) scale(1.012);transition:transform 3s ease}
@@ -618,3 +618,19 @@ html.is-source .stage{visibility:hidden}
 .l-list .quiet-utils.is-text .u-content>*+*{margin-left:0;margin-right:0}
 .quiet-utils.is-text .u-content>*+*{margin-left:0}
 .l-list .quiet-utils.is-text .u .u-content>*+*{margin-right:0}
+/* Settings fit above the remote hint (top 968px). Detail pages scroll inside this box when needed (main.js
+   keepDetailFocusVisible); a short fade marks the hidden part. */
+.appearance-rows{max-height:684px;overflow:hidden}
+.detail-widgets .appearance-rows,.detail-layout .appearance-rows{max-height:700px}
+.appearance-rows.has-after{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 56px),transparent)}
+.appearance-rows.has-before{-webkit-mask-image:linear-gradient(to bottom,transparent,#000 56px);mask-image:linear-gradient(to bottom,transparent,#000 56px)}
+.appearance-rows.has-before.has-after{-webkit-mask-image:linear-gradient(to bottom,transparent,#000 56px,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to bottom,transparent,#000 56px,#000 calc(100% - 56px),transparent)}
+.detail-widgets .section-show-more{margin-top:8px}
+/* Seven groups fit between the title and the remote hint. */
+.settings-overview{top:196px}
+.settings-group{height:100px;padding-top:6px;padding-bottom:6px}
+.settings-group+.settings-group{margin-top:4px}
+/* Clock and widgets: equal columns so the city grid lines up; the city rows sit close under Automatic. */
+.detail-widgets .is-horizontal .setting-choice{flex:1 1 0}
+.detail-widgets .section-cities,.detail-widgets .section-cities-more{margin-top:6px}
+.detail-widgets .section-cities-more .setting-options::after{content:"";flex:1 1 0;margin-left:12px;padding:0 20px}

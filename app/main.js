@@ -125,11 +125,13 @@
     im.src = ICONS + id + '.svg';
   }
   /* Optical placement is identical for the CSS mask and the image fallback. */
+  /* Wide line icons read larger than their area suggests; the HDMI plug is trimmed to sit with square marks. */
+  var OPTICAL = { hdmi: 0.84 };
   function markHtml(id, w, h, size) {
     var m = window.FrameIconMetrics && window.FrameIconMetrics[id], st;
     if (m) {
       var weight = clamp(Math.pow(0.45 / m.fill, 0.3), 0.84, 1.25);
-      var k = Math.min(w / m.w, h / m.h, size * weight / Math.sqrt(m.w * m.h)), s = m.n * k;
+      var k = Math.min(w / m.w, h / m.h, size * weight * (OPTICAL[id] || 1) / Math.sqrt(m.w * m.h)), s = m.n * k;
       st = 'width:' + px(s) + ';height:' + px(s) + ';left:' + px(w / 2 - (m.x + m.w / 2) * k) + ';top:' + px(h / 2 - (m.y + m.h / 2) * k);
     } else st = 'width:' + w + 'px;height:' + h + 'px;left:0;top:0;object-fit:contain';
     probeMark(id);
@@ -938,22 +940,21 @@
     var cities = W.places().map(function (p) { return { action: 'widgets.place.' + p.id, label: p.city, radio: true, applied: c.place === p.id }; });
     return [
       { id: 'hours', title: 'Time format', horizontal: true, items: [12, 24].map(function (h) { return { action: 'widgets.hours.' + h, label: h + '-hour', radio: true, applied: c.hours === h }; }) },
-      { id: 'place', title: 'Location for weather and prayer times', items: [{ action: 'widgets.place.auto', label: 'Automatic', radio: true, applied: c.place === 'auto',
-        description: at.source === 'auto' ? (at.method === 'device' ? 'Detected: ' : 'From your internet provider: ') + at.city : at.source === 'fallback' ? 'Using ' + at.city + ' until detected' : 'Find from this TV’s network' }] },
-      { id: 'cities', title: 'Or choose a city', horizontal: true, items: cities.slice(0, 4) },
+      // Automatic's detected city moves into its focus hint so the whole page fits one screen.
+      { id: 'place', title: 'Location for weather and prayer times', horizontal: true, items: [{ action: 'widgets.place.auto', label: 'Automatic', radio: true, applied: c.place === 'auto',
+        hint: c.place !== 'auto' ? 'Find the city from this TV’s network' : at.source === 'auto' ? 'Using ' + at.city + (at.method === 'device' ? ', detected by the TV' : ', from your internet provider') : 'Using ' + at.city + ' until the city is detected' }] },
+      { id: 'cities', title: '', horizontal: true, items: cities.slice(0, 4) },
       { id: 'cities-more', title: '', horizontal: true, items: cities.slice(4) },
-      onOff('weather', 'Weather', c.weather),
-      onOff('prayer', 'Prayer times', c.prayer),
-      onOff('radar', 'Rain radar when rain is nearby', c.radar),
-      onOff('care', 'Screen care: dim and shift Home when idle', c.care)
+      // Four switches in two rows keep the page within one screen; OK turns the focused one on or off.
+      { id: 'show', title: 'Show on Home', horizontal: true, items: [toggle('weather', 'Weather', c.weather), toggle('prayer', 'Prayer times', c.prayer)] },
+      { id: 'show-more', title: '', horizontal: true, items: [toggle('radar', 'Rain radar', c.radar), toggle('care', 'Screen care', c.care)] }
     ];
-    function onOff(id, title, on) {
-      return { id: id, title: title, horizontal: true, items: [
-        { action: 'widgets.' + id + '.on', label: 'On', radio: true, applied: on },
-        { action: 'widgets.' + id + '.off', label: 'Off', radio: true, applied: !on }] };
+    function toggle(id, label, on) {
+      return { action: 'widgets.toggle.' + id, label: label, toggle: true, applied: on, hint: TOGGLE_HINTS[id] };
     }
   }
   function widgetValue(k) { var W = window.CleanFrameWidgets; return W ? W.value ? W.value(k) : W.config()[k] : undefined; }
+  var TOGGLE_HINTS = { weather: 'weather', prayer: 'prayer times', radar: 'rain radar', care: 'idle dimming' };
   function dockPosition() { return widgetValue('dock') === 'lower' ? 'lower' : 'standard'; }
   function widgetChoice(action) {
     var parts = action.split('.'), W = window.CleanFrameWidgets;
@@ -962,7 +963,7 @@
     else if (parts[1] === 'place') W.configure({ place: parts[2] });
     else if (parts[1] === 'radar') W.configure({ radar: parts[2] === 'on' });
     else if (parts[1] === 'dock') W.configure({ dock: parts[2] });
-    else if (parts[1] === 'weather' || parts[1] === 'prayer' || parts[1] === 'care') { var patch = {}; patch[parts[1]] = parts[2] === 'on'; W.configure(patch); }
+    else if (parts[1] === 'toggle' && TOGGLE_HINTS.hasOwnProperty(parts[2])) { var patch = {}; patch[parts[2]] = !W.config()[parts[2]]; W.configure(patch); }
   }
   function detailRows(t) {
     var rows = [[{ action: 'settings.back', label: t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'Samsung' : 'Settings' }]];
@@ -1034,7 +1035,7 @@
       var axis = { background: 'bg', layout: 'layout', typography: 'font', focus: 'focus', rotation: 'mode' }[t.group];
       rows.forEach(function (items) { items.forEach(function (item) {
         if (item.action === t.f.action) exists = true;
-        if (item.radio ? item.applied && !applied : item.axis === axis && item.value === S.c[axis]) applied = item;
+        if (item.radio ? item.applied && !applied : axis && item.axis === axis && item.value === S.c[axis]) applied = item;
       }); });
       if (!exists) detailFocus(t, applied || (rows[1] || rows[0])[0], 0);
       if (t.f.column === undefined) t.f.column = detailLocation(t).column;
@@ -1493,10 +1494,10 @@
     appearanceTitle.textContent = DETAIL_NAMES[t.group];
     var at = detailLocation(t), selected = at.item, error = S.lookError, status = '', hint;
     function command(item, inner, cls) {
-      var applied = item.radio ? !!item.applied : item.axis && S.c[item.axis] === item.value, radio = item.axis || item.radio;
+      var applied = item.radio || item.toggle ? !!item.applied : item.axis && S.c[item.axis] === item.value, radio = item.axis || item.radio || item.toggle;
       var loading = !!(item.axis && S.pending && S.pending.target[item.axis] === item.value && S.pending.row === item.axis);
       return '<button type="button" tabindex="-1" class="setting-choice' + (cls ? ' ' + cls : '') + (t.f.action === item.action ? ' is-focus' : '') + (item.disabled ? ' is-disabled' : '') + (applied ? ' is-applied' : '') + (loading ? ' is-loading' : '') + '"'
-        + (radio ? ' role="radio" aria-checked="' + !!applied + '"' : '') + ' aria-label="' + esc(item.axis && item.value === 'both' ? 'Icons and text' : item.label) + '" aria-disabled="' + !!item.disabled + '" aria-busy="' + loading + '"'
+        + (radio ? ' role="' + (item.toggle ? 'checkbox' : 'radio') + '" aria-checked="' + !!applied + '"' : '') + ' aria-label="' + esc(item.axis && item.value === 'both' ? 'Icons and text' : item.label) + '" aria-disabled="' + !!item.disabled + '" aria-busy="' + loading + '"'
         + ' data-z="detail" data-i="0" data-id="' + item.action + '" data-action="' + item.action + '">' + inner
         + (radio ? '<span class="setting-tick" aria-hidden="true">' + (applied ? icon('check') : '') + '</span>' : '') + '</button>';
     }
@@ -1512,19 +1513,36 @@
             : '<img class="setting-swatch" src="' + WP + S.c.wall + '-thumb.jpg" alt="">';
           body += '<span class="setting-copy"><span class="setting-name">' + esc(item.label) + '</span>'
             + (item.description ? '<span class="setting-description">' + esc(item.description) + '</span>' : '') + '</span>';
-          if (!item.axis && !item.radio) body += icon('right', 'setting-forward');
+          if (!item.axis && !item.radio && !item.toggle) body += icon('right', 'setting-forward');
           return command(item, body, item.description ? 'has-description' : '');
         }).join('') + '</div>'
         + (section.reason ? '<p class="setting-reason">' + esc(section.reason) + '</p>' : '') + '</section>';
     }).join(''));
+    keepDetailFocusVisible(t);
     if (S.pending) status = '<p>Loading ' + esc(S.pending.row === 'font' ? FONTS[S.pending.target.font].name : 'your choice') + '…</p><p>Back cancels this change.</p>';
     else if (error) {
       status = '<p class="setting-error">' + (error.type === 'save' ? 'Couldn’t save this change.' : error.type === 'font' ? 'Couldn’t load ' + esc(FONTS[error.font].name) + '.' : 'Couldn’t load this appearance.') + ' Your current choice is kept.</p>'
         + command({ action: 'settings.retry', label: 'Try again' }, '<span>Try again</span>', 'setting-retry');
     }
     setHTML(appearanceStatus, status);
-    hint = selected.disabled ? '' : selected.action === 'settings.back' ? 'Return to ' + (t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'Samsung' : 'Settings') : selected.action === 'settings.retry' ? 'Retry this change' : selected.axis || selected.radio ? 'Apply selected setting' : selected.action === 'background.wallpaper' ? 'Choose a wallpaper' : selected.action === 'background.rotation' ? 'Choose a rotation interval' : 'Open on the TV';
+    hint = selected.disabled ? '' : selected.toggle ? (selected.applied ? 'Turn off ' : 'Turn on ') + selected.hint : selected.hint ? selected.hint : selected.action === 'settings.back' ? 'Return to ' + (t.group === 'rotation' ? 'Background' : t.group === 'inputs' ? 'Samsung' : 'Settings') : selected.action === 'settings.retry' ? 'Retry this change' : selected.axis || selected.radio ? 'Apply selected setting' : selected.action === 'background.wallpaper' ? 'Choose a wallpaper' : selected.action === 'background.rotation' ? 'Choose a rotation interval' : 'Open on the TV';
     setHTML(appearanceDesc, hint ? '<span class="remote-key">OK</span><span>' + esc(hint) + '</span>' : '');
+  }
+  /* A detail page taller than the space above the remote hint scrolls so the focused choice and its
+     heading stay in view; fades mark the hidden part. Pages that fit never move. */
+  function keepDetailFocusVisible(t) {
+    var rows = appearanceRows, focus = rows.querySelector('.setting-choice.is-focus'), section, top, bottom, more;
+    if (rows._group !== t.group) { rows._group = t.group; rows.scrollTop = 0; }
+    more = rows.scrollHeight > rows.clientHeight + 1;
+    if (!more) { rows.scrollTop = 0; return; }
+    if (focus) {
+      section = focus.parentNode && focus.parentNode.parentNode;
+      top = Math.min(focus.offsetTop, section && section.offsetTop !== undefined ? section.offsetTop : focus.offsetTop);
+      bottom = focus.offsetTop + focus.offsetHeight;
+      if (top < rows.scrollTop) rows.scrollTop = Math.max(0, top - 8);
+      else if (bottom > rows.scrollTop + rows.clientHeight) rows.scrollTop = bottom - rows.clientHeight + 8;
+    }
+    rows.className = 'appearance-rows' + (rows.scrollTop > 0 ? ' has-before' : '') + (rows.scrollTop + rows.clientHeight < rows.scrollHeight - 1 ? ' has-after' : '');
   }
   function renderWallpaper(t) {
     V.wallpaper.norm(t);
