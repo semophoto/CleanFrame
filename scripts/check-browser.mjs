@@ -4,27 +4,34 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { openPreview, root } from './browser.mjs';
 
 const KEY = 'cleanframe.home.v1';
-const PRIMARY = ['stremio', 'netflix', 'disneyplus', 'youtube', 'appletv', 'primevideo', 'abciview', 'sbs', 'applemusic'];
-const IDS = ['IkWsFHtOY9.Stremio', 'org.tizen.netflix-app', 'MCmYXNxgcu.DisneyPlus', '9Ur5IzDKqV.TizenYouTube', 'com.samsung.tv.aria-video', 'org.tizen.primevideo', 'mWK87Xghap.ABCiview', 'OyE7OuxlUi.SBSOnDemand', 'org.tizen.apple.apple-music'];
-const NAMES = ['Stremio', 'Netflix', 'Disney+', 'YouTube', 'Apple TV', 'Prime Video', 'ABC iview', 'SBS On Demand', 'Apple Music'];
+const PRIMARY = ['nuvio', 'tizentube', 'art'];
+// Art Mode is opened by app control, so only the two installed apps appear in the native catalogue.
+const IDS = ['NuvioTV001.NuvioTV', 'xvvl3S1TT1.TizenTubeStandalone'];
+const NAMES = ['Nuvio TV', 'TizenTube'];
+const FILLERS = ['Aa00000001.One', 'Aa00000002.Two', 'Aa00000003.Three', 'Aa00000004.Four', 'Aa00000005.Five', 'Aa00000006.Six'];
+const RAINY = { current: { temperature_2m: 22.4, weather_code: 61, precipitation: 0.6 }, hourly: { precipitation: [0.6, 0.2] }, daily: { temperature_2m_max: [26.1], temperature_2m_min: [18.7] } };
+const RADAR = { version: '2.0', host: 'https://tilecache.rainviewer.com', radar: { past: [{ time: 1793000000, path: '/v2/radar/qa0000000001' }] } };
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+const NETWORK_PLACE = { latitude: 21.49, longitude: 39.19, city: 'Jeddah' };
+const WEATHER = { current: { temperature_2m: 31.6, weather_code: 0 }, daily: { temperature_2m_max: [35.2], temperature_2m_min: [23.8] } };
 const EXTRA = 'AbCdEf1234.FamilyApp', SPOTIFY = 'rJeHak5zRg.Spotify';
 const UNSAFE_NAME = 'Family <img src=x onerror="window.__catalogXss=1"> & TV';
 const CATALOG = IDS.map((id, i) => ({ id, name: NAMES[i], show: true, iconPath: '' })).concat([
   { id: EXTRA, name: UNSAFE_NAME, show: true, iconPath: '' },
   { id: SPOTIFY, name: 'Spotify', show: true, iconPath: '' },
   { id: '5b8c3eb16b.BeamCTVDev', name: 'HBO Max', show: true, iconPath: '' },
-  { id: 'nClrkHome1.FrameHome', name: 'CleanFrame', show: true },
+  { id: '2WypXqAbpb.CleanFrame', name: 'CleanFrame', show: true },
   { id: 'AbCdEf1234.worker', name: 'Background worker', show: true },
   { id: 'com.samsung.tv.cobalt-yt', name: 'YouTube', show: true }
 ]);
 const walls = JSON.parse(readFileSync(root + 'app/assets/wallpapers/SOURCES.json', 'utf8'));
 const out = root + '.local/qa/';
 mkdirSync(out, { recursive: true });
-const sourceFiles = ['app/main.js', 'app/device.js', 'app/index.html', 'app/style.css', 'app/config.xml', 'app/assets/wallpapers/SOURCES.json', 'app/assets/wallpapers/catalog.js', 'app/assets/adaptive-ink.js', 'app/assets/icons/metrics.js'];
+const sourceFiles = ['app/main.js', 'app/device.js', 'app/widgets.js', 'app/index.html', 'app/style.css', 'app/config.xml', 'app/assets/wallpapers/SOURCES.json', 'app/assets/wallpapers/catalog.js', 'app/assets/adaptive-ink.js', 'app/assets/icons/metrics.js'];
 const hashes = () => Object.fromEntries(sourceFiles.map(f => [f, createHash('sha256').update(readFileSync(root + f)).digest('hex')]));
 const report = { scope: 'Production UI in Chromium; mock public Tizen API only; no TV contacted.', sourceBefore: hashes(), checks: [], failures: [], pageErrors: [], expectedNetworkFailures: [] };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const baseline = (patch = {}) => ({ dock: PRIMARY.slice(), wallpaper: walls[0].id, mode: 'fixed', lastApp: 'netflix', theme: 'shore', ...patch });
+const baseline = (patch = {}) => ({ dock: PRIMARY.slice(), wallpaper: walls[0].id, mode: 'fixed', lastApp: 'nuvio', theme: 'shore', ...patch });
 let preview, current, section = '';
 
 function check(name, pass, detail) {
@@ -42,7 +49,7 @@ async function run(name, fn) {
 async function closePage() { if (current) { current.__closing = true; await current.close(); current = null; } }
 
 // Production still calls its unmodified device.js adapter.
-function installHarness({ seed, legacy, mock, catalog, minuteMs, catalogFailure, noFontAPI, storageFailure }) {
+function installHarness({ seed, legacy, mock, catalog, minuteMs, catalogFailure, noFontAPI, storageFailure, sources }) {
   if (!sessionStorage.getItem('__cleanframe_seeded')) {
     if (seed !== undefined) localStorage.setItem('cleanframe.home.v1', typeof seed === 'string' ? seed : JSON.stringify(seed));
     if (legacy !== undefined) localStorage.setItem('cleanframe.shore.v1', typeof legacy === 'string' ? legacy : JSON.stringify(legacy));
@@ -66,6 +73,14 @@ function installHarness({ seed, legacy, mock, catalog, minuteMs, catalogFailure,
   if (!mock) return;
   window.__tv = { catalog, catalogFailure: !!catalogFailure, launchFailure: false, holdCatalog: false, pending: [], calls: [], catalogCalls: 0 };
   window.tizen = {
+    systeminfo: {
+      getPropertyValue(name, ok) { setTimeout(() => ok({ connected: (sources || []).map(number => ({ type: 'HDMI', number })), disconnected: [] }), 0); }
+    },
+    tvwindow: {
+      setSource(source, ok) { window.__tv.calls.push({ method: 'setSource', port: source.number }); setTimeout(ok, 0); },
+      show(ok, fail, rect, type) { window.__tv.calls.push({ method: 'show', rect, type }); setTimeout(ok, 0); },
+      hide(ok) { window.__tv.calls.push({ method: 'hide' }); ok(); }
+    },
     ApplicationControlData: function (key, value) { this.key = key; this.value = value; },
     ApplicationControl: function (operation, uri, mime, category, data) { Object.assign(this, { operation, uri, mime, category, data }); },
     application: {
@@ -100,6 +115,11 @@ async function page(options = {}) {
     if (expected.some(s => request.url().includes(s))) report.expectedNetworkFailures.push(failure);
     else if (failure.error !== 'net::ERR_ABORTED') report.pageErrors.push(failure);
   });
+  // Weather and IP location are public network services; the suite answers them locally so no request leaves this computer.
+  await current.route('https://api.open-meteo.com/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(options.weather || WEATHER) }));
+  await current.route('https://api.rainviewer.com/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(RADAR) }));
+  await current.route(/^https:\/\/(tilecache\.rainviewer\.com|services\.arcgisonline\.com)\//, route => route.fulfill({ status: 200, contentType: 'image/png', body: PNG }));
+  await current.route(/^https:\/\/(ipapi\.co|ipwho\.is)\//, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(NETWORK_PLACE) }));
   await current.addInitScript(installHarness, { mock: true, catalog: CATALOG, minuteMs: 60000, seed: baseline(), ...options });
   await current.goto(preview.baseURL + '/home/');
   await ready();
@@ -202,28 +222,28 @@ try {
   preview = await openPreview();
   await run('Legacy preference migration', async () => {
     for (const theme of ['list', 'shore', 'grid']) {
-      await page({ seed: baseline({ theme, dock: ['youtube', 'netflix'], wallpaper: walls[1].id, lastApp: 'youtube', mode: '15' }) });
+      await page({ seed: baseline({ theme, dock: ['tizentube', 'nuvio'], wallpaper: walls[1].id, lastApp: 'tizentube', mode: '15' }) });
       const s = await state();
-      check(theme + ' preserves order, wallpaper and rotation', same(s.dock, ['youtube', 'netflix']) && s.wallpaper === walls[1].id && s.mode === '15' && s.lastApp === 'youtube', s);
+      check(theme + ' preserves order, wallpaper and rotation', same(s.dock, ['tizentube', 'nuvio']) && s.wallpaper === walls[1].id && s.mode === '15' && s.lastApp === 'tizentube', s);
       check(theme + ' maps to intended two-layout appearance', s.look.layout === (theme === 'list' ? 'list' : 'dock') && s.look.bg === (theme === 'list' ? 'dark' : 'photo'), s.look);
       await closePage();
     }
-    await page({ seed: undefined, legacy: baseline({ theme: 'list', dock: ['netflix'], lastApp: 'netflix' }) });
+    await page({ seed: undefined, legacy: baseline({ theme: 'list', dock: ['nuvio'], lastApp: 'nuvio' }) });
     check('Old shore key is read', (await state()).dock.length === 1 && (await state()).look.layout === 'list');
     await look({ controls: 'text' });
-    check('Next completed edit writes stable home key', (await stored()).dock[0] === 'netflix');
+    check('Next completed edit writes stable home key', (await stored()).dock[0] === 'nuvio');
     await current.reload(); await ready();
-    check('Migrated preferences survive reload', (await state()).look.controls === 'text' && (await state()).dock[0] === 'netflix');
+    check('Migrated preferences survive reload', (await state()).look.controls === 'text' && (await state()).dock[0] === 'nuvio');
   });
   await run('Invalid preferences and saved native pins', async () => {
-    await page({ seed: '{broken', legacy: baseline({ dock: ['netflix'], lastApp: 'netflix' }) });
-    check('Malformed primary recovers valid legacy key', same((await state()).dock, ['netflix']));
+    await page({ seed: '{broken', legacy: baseline({ dock: ['nuvio'], lastApp: 'nuvio' }) });
+    check('Malformed primary recovers valid legacy key', same((await state()).dock, ['nuvio']));
     await closePage();
     await page({ seed: { dock: [], wallpaper: 'missing', mode: 'constructor', theme: 'constructor' } });
     const s = await state();
     check('Invalid values recover usable bounded Home', s.dock.length >= 1 && s.dock.length <= 9 && walls.some(w => w.id === s.wallpaper) && ['fixed', 'open', '5', '15', '60'].includes(s.mode), s);
     await closePage();
-    await page({ seed: baseline({ dock: [EXTRA, 'netflix'], lastApp: EXTRA }), catalogFailure: true });
+    await page({ seed: baseline({ dock: [EXTRA, 'nuvio'], lastApp: EXTRA }), catalogFailure: true });
     await library();
     check('Discovery failure preserves saved native pin', (await state()).dock.includes(EXTRA));
   });
@@ -237,26 +257,30 @@ try {
   await run('Real catalogue and native launch boundary', async () => {
     await page(); await library();
     const names = await current.locator('[data-action^="apps.open."] .label').allTextContents();
-    check('Consumer catalogue excludes services, self and duplicate YouTube', names.length === 12 && names.filter(n => n === 'YouTube').length === 1 && !names.includes('CleanFrame') && !names.includes('Background worker'), names);
+    check('Consumer catalogue excludes services, self and the system YouTube', names.length === 5 && !names.includes('YouTube') && !names.includes('CleanFrame') && !names.includes('Background worker'), names);
     check('Installed names stay text, including HTML punctuation', names.includes(UNSAFE_NAME) && !(await current.evaluate(() => window.__catalogXss)));
     check('Exploration fixtures do not appear', !names.includes('Plex') && !names.includes('Jellyfin'));
     await act('apps.open.' + SPOTIFY); await current.waitForFunction(() => __tv.calls.length > 0);
     check('Extra-brand app launches native ID', (await current.evaluate(() => __tv.calls.at(-1))).id === SPOTIFY);
     await current.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await scene('home'); await act('home.app.netflix'); await current.waitForFunction(() => __tv.calls.length === 2);
-    check('Primary app keeps verified target', (await current.evaluate(() => __tv.calls.at(-1))).id === IDS[1]);
+    await scene('home'); await act('home.app.nuvio'); await current.waitForFunction(() => __tv.calls.length === 2);
+    check('Primary app keeps verified target', (await current.evaluate(() => __tv.calls.at(-1))).id === IDS[0]);
     await current.evaluate(() => window.dispatchEvent(new Event('focus')));
     await act('util.art'); await current.waitForFunction(() => __tv.calls.length === 3);
     const art = await current.evaluate(() => __tv.calls.at(-1));
     check('Art Mode uses app-control with fullscreen request', art.method === 'launchAppControl' && art.id === 'org.tizen.art-app' && art.control.data.some(d => d.key === 'mode' && d.value[0] === 'fullscreen'), art);
+    await current.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await scene('home'); await act('home.app.art'); await current.waitForFunction(() => __tv.calls.length === 4);
+    const homeArt = await current.evaluate(() => __tv.calls.at(-1));
+    check('Art Mode on Home uses the same app-control request', homeArt.method === 'launchAppControl' && homeArt.id === 'org.tizen.art-app' && homeArt.control.data.some(d => d.key === 'mode' && d.value[0] === 'fullscreen'), homeArt);
     await current.evaluate(() => window.dispatchEvent(new Event('focus'))); await group('samsung'); await act('samsung.home');
-    await current.waitForFunction(() => __tv.calls.length === 4);
+    await current.waitForFunction(() => __tv.calls.length === 5);
     check('Samsung escape keeps CSFS target', (await current.evaluate(() => __tv.calls.at(-1))).id === 'com.samsung.tv.csfs');
     await current.evaluate(() => window.dispatchEvent(new Event('focus'))); await group('samsung'); await act('samsung.settings');
-    await current.waitForFunction(() => __tv.calls.length === 5);
+    await current.waitForFunction(() => __tv.calls.length === 6);
     check('TV settings keeps installed target', (await current.evaluate(() => __tv.calls.at(-1))).id === 'com.samsung.tv.coba.setting');
     await current.evaluate(() => { window.dispatchEvent(new Event('focus')); __tv.launchFailure = true; });
-    await scene('home'); await act('home.app.netflix'); await current.waitForFunction(() => ShoreQA.where().view === 'message');
+    await scene('home'); await act('home.app.nuvio'); await current.waitForFunction(() => ShoreQA.where().view === 'message');
     check('Launch failure is shown', /could not|unavailable|try again/i.test(await current.locator('#stage').innerText()));
   });
   await run('Catalogue failure and retry', async () => {
@@ -264,7 +288,7 @@ try {
     check('Catalogue failure leaves Home intact', same((await state()).dock, PRIMARY));
     await current.evaluate(() => { __tv.catalogFailure = false; }); await act('apps.retry');
     await current.waitForSelector('[data-action="apps.open.' + EXTRA + '"]');
-    check('Retry displays real installed names', (await current.locator('[data-action^="apps.open."]').count()) === 12);
+    check('Retry displays real installed names', (await current.locator('[data-action^="apps.open."]').count()) === 5);
   });
   await run('Native icon and failed-image fallback', async () => {
     await page({ catalog: CATALOG.map(a => a.id === EXTRA ? { ...a, iconPath: '/home/assets/icons/netflix.svg' } : a) });
@@ -294,33 +318,34 @@ try {
   await run('Immediate edits, undo, move cancellation and limits', async () => {
     await page(); await editor();
     const start = (await state()).dock;
-    await remove('netflix');
-    check('Remove persists membership and keeps installation', !(await stored()).dock.includes('netflix') && (await current.evaluate(() => __tv.catalog.some(a => a.id === 'org.tizen.netflix-app'))));
-    check('Focus follows removal into addable apps', (await state()).focusAction === 'editor.add.netflix', (await state()).focusAction);
+    await remove('nuvio');
+    check('Remove persists membership and keeps installation', !(await stored()).dock.includes('nuvio') && (await current.evaluate(() => __tv.catalog.some(a => a.id === 'NuvioTV001.NuvioTV'))));
+    check('Focus follows removal into addable apps', (await state()).focusAction === 'editor.add.nuvio', (await state()).focusAction);
     await nav('ok'); check('Second OK restores same position', same((await stored()).dock, start));
-    await remove('netflix'); await act('editor.undo'); check('Undo persists previous membership', same((await stored()).dock, start));
-    await act('editor.move.netflix'); await nav('down'); check('Unfinished move does not write', same((await stored()).dock, start));
+    await remove('nuvio'); await act('editor.undo'); check('Undo persists previous membership', same((await stored()).dock, start));
+    await act('editor.move.nuvio'); await nav('down'); check('Unfinished move does not write', same((await stored()).dock, start));
     await nav('back'); check('Back cancels unfinished move', same((await state()).dock, start));
-    await act('editor.move.netflix'); await nav('down', 'ok');
-    const moved = start.slice(); [moved[1], moved[2]] = [moved[2], moved[1]];
+    await act('editor.move.nuvio'); await nav('down', 'ok');
+    const moved = start.slice(); [moved[0], moved[1]] = [moved[1], moved[0]];
     check('Placed move persists immediately', same((await stored()).dock, moved));
-    await act('editor.add.' + EXTRA); check('Nine-app cap prevents addition', (await state()).dock.length === 9 && !(await state()).dock.includes(EXTRA));
-    await remove('stremio'); await act('editor.add.' + EXTRA);
-    check('Native app can be pinned with stable ID', (await stored()).dock.includes(EXTRA) && (await state()).dock.length === 9);
+    await act('editor.add.' + EXTRA);
+    check('Native app can be pinned with stable ID', (await stored()).dock.includes(EXTRA) && (await state()).dock.length === 4);
     check('Native pin retains readable metadata for failed discovery', (await stored()).appRecords.some(a => a.id === EXTRA && a.name === UNSAFE_NAME));
     await current.reload(); await ready(); check('Native pin survives reload', (await state()).dock.includes(EXTRA));
-    await editor(); const ids = (await state()).dock;
+    await closePage(); await page({ seed: baseline({ dock: PRIMARY.concat(FILLERS) }) }); await editor();
+    await act('editor.add.' + EXTRA); check('Nine-app cap prevents addition', (await state()).dock.length === 9 && !(await state()).dock.includes(EXTRA));
+    const ids = (await state()).dock;
     for (const id of ids.slice(1)) await remove(id);
     await remove(ids[0]); check('Last Home app cannot be removed', same((await state()).dock, [ids[0]]) && same((await stored()).dock, [ids[0]]));
     check('Editor has no Save action', !(await current.locator('#stage').innerText()).match(/\bSave\b/));
   });
   await run('Actual storage failures are atomic', async () => {
     await page(); await editor(); const before = await stored();
-    await current.evaluate(() => { window.__failWrites = true; }); await remove('netflix');
+    await current.evaluate(() => { window.__failWrites = true; }); await remove('nuvio');
     check('Failed removal changes neither committed state nor storage', same((await state()).dock, before.dock) && same(await stored(), before));
     check('Failed write gives visible feedback', /not saved|couldn.t save|tries again/i.test(await current.locator('#stage').innerText()));
     await current.evaluate(() => { window.__failWrites = false; }); await nav('ok');
-    check('Retry commits through same action', !(await stored()).dock.includes('netflix'));
+    check('Retry commits through same action', !(await stored()).dock.includes('nuvio'));
     await scene('home'); const old = await state(), oldStored = await stored();
     await current.evaluate(() => { window.__failWrites = true; }); await call('look', { bg: old.look.bg === 'light' ? 'dark' : 'light' });
     await current.waitForFunction(() => !ShoreQA.state().pending);
@@ -806,9 +831,9 @@ try {
     check('A missing thumbnail does not prevent applying its full photo', (await state()).committed.wall === target.id && Object.values(await wallpaperBundle()).every(src => src.includes('/' + target.id)));
   });
   await run('Physical-key repeats and Back hierarchy', async () => {
-    await page(); await editor(); await remove('netflix');
+    await page(); await editor(); await remove('nuvio');
     await current.keyboard.down('Enter'); await current.keyboard.down('Enter');
-    check('Held OK restores once without removing again', (await state()).dock.includes('netflix') && (await state()).dock.length === 9);
+    check('Held OK restores once without removing again', (await state()).dock.includes('nuvio') && (await state()).dock.length === PRIMARY.length);
     await current.keyboard.up('Enter');
     await current.keyboard.down('Escape'); await current.keyboard.down('Escape');
     check('Held Back closes one layer only', (await call('where')).view === 'settings' && (await state()).focusAction === 'settings.editor');
@@ -836,7 +861,7 @@ try {
     const focus = (await state()).focusAction; await current.keyboard.press('ArrowDown');
     check('Warm return restores remote focus', (await state()).focusAction !== focus && (await call('where')).focusCount === 1);
     const clock = await current.locator('#caption .clock').textContent();
-    check('Live 12-hour clock has no AM/PM', /^\s*\d{1,2}:\d{2}\s*$/.test(clock), clock);
+    check('Live 12-hour clock shows AM/PM', /^\d{1,2}:\d{2}\s?(AM|PM)$/.test(clock), clock);
   });
   await run('Open rotation and browser fallback', async () => {
     await page({ seed: baseline({ mode: 'open' }) }); check('Open mode advances at cold start', (await state()).wallpaper === walls[1].id);
@@ -845,10 +870,63 @@ try {
     check('Warm return does not repeat open rotation', (await state()).wallpaper === first);
     await current.reload(); await ready(); check('Next cold start advances again', (await state()).wallpaper === walls[2].id);
     await closePage();
-    await page({ mock: false }); await act('home.app.netflix'); await current.waitForFunction(() => ShoreQA.where().view === 'message');
+    await page({ mock: false }); await act('home.app.nuvio'); await current.waitForFunction(() => ShoreQA.where().view === 'message');
     check('Browser launch honestly requires TV', /TV/.test(await current.locator('#stage').innerText()));
     await nav('back'); await library();
     check('Browser All Apps has no installed fixtures', /TV/.test(await current.locator('#stage').innerText()) && !(await current.locator('[data-action^="apps.open."]').count()));
+  });
+  await run('Home widgets', async () => {
+    await page();
+    await current.waitForFunction(() => document.querySelector('#caption .w-weather'));
+    const w = await current.evaluate(() => {
+      const cap = document.getElementById('caption');
+      return { weather: cap.querySelector('.w-weather').textContent, prayers: [...cap.querySelectorAll('.w-prayer .w-name')].map(e => e.textContent),
+        times: [...cap.querySelectorAll('.w-prayer .w-time')].map(e => e.textContent), next: cap.querySelectorAll('.w-prayer.is-next').length + cap.querySelectorAll('.w-next').length,
+        focusable: cap.querySelectorAll('[data-action], [tabindex]').length };
+    });
+    check('Weather shows rounded temperature and condition', /32°/.test(w.weather) && /Clear/.test(w.weather) && /35° \/ 24°/.test(w.weather), w);
+    check('Five daily prayers have times', same(w.prayers, ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']) && w.times.every(t => /^\d{1,2}:\d{2}\s?(AM|PM)$/.test(t)), w);
+    check('Next prayer is indicated', w.next >= 1, w);
+    check('Widgets never take remote focus', w.focusable === 0 && (await call('where')).focusCount === 1, w);
+    check('Network location names the nearest city', /Jeddah/.test(w.weather) && (await current.evaluate(() => CleanFrameWidgets.location().method)) === 'network', w);
+    await group('widgets'); await act('widgets.hours.24'); await act('widgets.place.taif');
+    const chosen = await current.evaluate(() => ({ config: CleanFrameWidgets.config(), saved: JSON.parse(localStorage.getItem('cleanframe.widgets.v1')).config, clock: CleanFrameWidgets.clock(new Date(2026, 9, 24, 18, 5)), city: CleanFrameWidgets.location().city }));
+    check('24-hour time and a chosen city are saved', chosen.config.hours === 24 && chosen.saved.hours === 24 && chosen.saved.place === 'taif' && chosen.clock === '18:05' && chosen.city === 'Taif', chosen);
+    await current.reload(); await ready();
+    check('Widget choices survive reload', (await current.evaluate(() => CleanFrameWidgets.config().place)) === 'taif' && /^\d{2}:\d{2}$/.test(await current.locator('#caption .clock').innerText()));
+    check('Radar stays hidden without nearby rain', !(await current.evaluate(() => document.querySelector('#radar.is-on'))));
+    await closePage(); await page({ weather: RAINY });
+    await current.waitForFunction(() => document.querySelector('#radar.is-on .radar-rain'));
+    const r = await current.evaluate(() => ({ tiles: document.querySelectorAll('#radar .radar-rain').length, bases: document.querySelectorAll('#radar .radar-base').length,
+      src: document.querySelector('#radar .radar-rain').getAttribute('src'), focusable: document.querySelectorAll('#radar [data-action], #radar [tabindex]').length }));
+    check('Nearby rain shows RainViewer radar over a base map', r.tiles >= 2 && r.tiles === r.bases && r.src.indexOf('https://tilecache.rainviewer.com/v2/radar/qa0000000001/256/7/') === 0 && r.focusable === 0, r);
+    await group('widgets'); await act('widgets.radar.off'); await scene('home');
+    check('Radar can be turned off', !(await current.evaluate(() => document.querySelector('#radar.is-on'))) && (await current.evaluate(() => CleanFrameWidgets.config().radar)) === false);
+    const riyadh = await current.evaluate(() => { const t = CleanFrameWidgets.prayerTimes(new Date(2026, 9, 24), { lat: 24.7136, lng: 46.6753 }); return ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].map(k => t[k].getUTCHours() * 60 + t[k].getUTCMinutes()); });
+    const expected = [97, 518, 713, 859, 949]; // 04:37, 11:38, 14:53, 17:19, 18:49 Riyadh (UTC+3) as UTC minutes
+    check('Riyadh Umm al-Qura times stay within two minutes', riyadh.every((m, i) => Math.abs(m - expected[i]) <= 2), riyadh);
+  });
+  await run('HDMI inputs on the dock', async () => {
+    await page({ sources: [1, 2] });
+    await current.waitForFunction(() => ShoreQA.state().dock.includes('hdmi2'));
+    check('Connected HDMI ports join Home once', same((await stored()).dock, PRIMARY.concat(['hdmi1', 'hdmi2'])));
+    await act('home.app.hdmi2'); await current.waitForFunction(() => document.documentElement.classList.contains('is-source'));
+    const calls = await current.evaluate(() => __tv.calls.slice());
+    check('HDMI 2 shows full screen in the TV window', calls.some(c => c.method === 'setSource' && c.port === 2) && calls.some(c => c.method === 'show' && c.type === 'MAIN' && c.rect.join() === '0px,0px,1920px,1080px'), calls);
+    check('Interface hides while an input is shown', (await current.evaluate(() => getComputedStyle(document.getElementById('stage')).visibility)) === 'hidden');
+    await nav('right'); check('Remote keys other than Back stay with the input', await current.evaluate(() => document.documentElement.classList.contains('is-source')));
+    await nav('back');
+    check('Back hides the input and returns Home', !(await current.evaluate(() => document.documentElement.classList.contains('is-source'))) && (await current.evaluate(() => __tv.calls.at(-1).method)) === 'hide' && (await call('where')).view === 'home');
+    await editor(); await remove('hdmi1'); await current.reload(); await ready();
+    await current.waitForTimeout(200);
+    check('A removed HDMI port is not added again', !(await state()).dock.includes('hdmi1') && (await state()).dock.includes('hdmi2'));
+    await group('layout'); await act('widgets.dock.lower'); await scene('home');
+    const dock = await current.evaluate(() => ({ cls: document.getElementById('stage').classList.contains('dock-lower'), top: document.getElementById('dock').getBoundingClientRect().top / (document.getElementById('stage').getBoundingClientRect().height / 1080), saved: JSON.parse(localStorage.getItem('cleanframe.widgets.v1')).config.dock }));
+    await current.goto(preview.baseURL + '/home/?source=hdmi1'); await ready();
+    await current.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')); });
+    await current.waitForFunction(() => document.documentElement.classList.contains('is-source'));
+    check('A source= launch opens that HDMI input full screen', (await current.evaluate(() => __tv.calls.filter(c => c.method === 'setSource').map(c => c.port))).includes(1));
+        check('Dock can sit lower and the choice is saved', dock.cls && Math.round(dock.top) === 756 && dock.saved === 'lower', dock);
   });
   section = 'Run integrity';
   report.sourceAfter = hashes();
